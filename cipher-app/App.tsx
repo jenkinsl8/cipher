@@ -1,0 +1,1019 @@
+import { StatusBar } from 'expo-status-bar';
+import * as DocumentPicker from 'expo-document-picker';
+import * as FileSystem from 'expo-file-system';
+import React, { useMemo, useState } from 'react';
+import {
+  Platform,
+  Pressable,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Switch,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
+
+import { SKILL_CATEGORIES } from './src/data/constants';
+import { generateCipherReport } from './src/engine/cipherEngine';
+import { parseLinkedInConnections } from './src/utils/csv';
+import {
+  AILiteracy,
+  CareerGoal,
+  MarketSnapshot,
+  RiskTolerance,
+  SkillCategory,
+  SkillInput,
+  UserProfile,
+} from './src/types';
+
+const initialProfile: UserProfile = {
+  name: '',
+  currentRole: '',
+  yearsExperience: '',
+  education: '',
+  certifications: '',
+  location: '',
+  willingToRelocate: false,
+  openToInternational: false,
+  age: '',
+  gender: '',
+  raceEthnicity: '',
+  industries: '',
+  riskTolerance: 'Moderate',
+  aiLiteracy: 'Beginner',
+  careerGoals: ['Growth'],
+  hobbies: '',
+  volunteer: '',
+  sideProjects: '',
+  notes: '',
+};
+
+const initialMarket: MarketSnapshot = {
+  updatedAt: '',
+  indicators: '',
+  hiringTrends: '',
+  layoffs: '',
+  funding: '',
+  aiTrends: '',
+  sources: '',
+};
+
+const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
+const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
+const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
+
+export default function App() {
+  const [profile, setProfile] = useState<UserProfile>(initialProfile);
+  const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
+  const [skills, setSkills] = useState<SkillInput[]>([]);
+  const [skillName, setSkillName] = useState('');
+  const [skillCategory, setSkillCategory] = useState<SkillCategory>('technical');
+  const [skillYears, setSkillYears] = useState('');
+  const [skillEvidence, setSkillEvidence] = useState('');
+  const [skillEnjoyment, setSkillEnjoyment] = useState('3');
+  const [linkedInCsv, setLinkedInCsv] = useState('');
+  const [linkedInStatus, setLinkedInStatus] = useState('');
+
+  const connections = useMemo(
+    () => parseLinkedInConnections(linkedInCsv),
+    [linkedInCsv]
+  );
+  const report = useMemo(
+    () => generateCipherReport(profile, skills, market, connections),
+    [profile, skills, market, connections]
+  );
+
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!profile.currentRole.trim()) missing.push('Current role');
+    if (!profile.location.trim()) missing.push('Location');
+    if (!profile.age.trim()) missing.push('Age');
+    if (!profile.gender.trim()) missing.push('Gender');
+    if (!profile.raceEthnicity.trim()) missing.push('Race/ethnicity');
+    if (skills.length === 0) missing.push('At least one skill');
+    return missing;
+  }, [profile, skills]);
+
+  const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
+    setProfile((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const updateMarket = <K extends keyof MarketSnapshot>(key: K, value: MarketSnapshot[K]) => {
+    setMarket((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const toggleGoal = (goal: CareerGoal) => {
+    setProfile((prev) => ({
+      ...prev,
+      careerGoals: prev.careerGoals.includes(goal)
+        ? prev.careerGoals.filter((item) => item !== goal)
+        : [...prev.careerGoals, goal],
+    }));
+  };
+
+  const addSkill = () => {
+    if (!skillName.trim()) return;
+    const years = Number(skillYears) || 0;
+    const enjoyment = Number(skillEnjoyment) || 3;
+    const newSkill: SkillInput = {
+      id: `${Date.now()}-${Math.round(Math.random() * 1000)}`,
+      name: skillName.trim(),
+      category: skillCategory,
+      years,
+      evidence: skillEvidence.trim(),
+      enjoyment: Math.max(1, Math.min(5, enjoyment)),
+    };
+    setSkills((prev) => [newSkill, ...prev]);
+    setSkillName('');
+    setSkillYears('');
+    setSkillEvidence('');
+    setSkillEnjoyment('3');
+  };
+
+  const removeSkill = (id: string) => {
+    setSkills((prev) => prev.filter((skill) => skill.id !== id));
+  };
+
+  const handleLinkedInPick = async () => {
+    setLinkedInStatus('');
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: ['text/csv', 'text/plain', 'application/vnd.ms-excel'],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets && result.assets[0];
+      if (!asset?.uri) return;
+      const content = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      setLinkedInCsv(content);
+      setLinkedInStatus(`Loaded ${content.split('\n').length} lines.`);
+    } catch (error) {
+      setLinkedInStatus('Could not load the CSV file.');
+    }
+  };
+
+  const agentStatus = [
+    { name: 'Cipher', role: 'Career strategist', status: 'Active' },
+    {
+      name: 'Sentinel',
+      role: 'Market conditions',
+      status: market.updatedAt ? 'Synced' : 'Needs data',
+    },
+    {
+      name: 'Aegis',
+      role: 'AI impact',
+      status: skills.length ? 'Ready' : 'Waiting for skills',
+    },
+    {
+      name: 'Atlas',
+      role: 'Career paths',
+      status: profile.currentRole ? 'Ready' : 'Waiting for role',
+    },
+    {
+      name: 'Nexus',
+      role: 'Network analysis',
+      status: connections.length ? 'Synced' : 'Waiting for LinkedIn data',
+    },
+  ];
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="light" />
+      <ScrollView contentContainerStyle={styles.container}>
+        <Text style={styles.title}>Cipher Career Strategist</Text>
+        <Text style={styles.subtitle}>
+          Web + mobile intelligence hub for AI-ready career strategy.
+        </Text>
+
+        <Section title="Agent Lineup" subtitle="Multi-agent workflow status">
+          <View style={styles.agentGrid}>
+            {agentStatus.map((agent) => (
+              <View key={agent.name} style={styles.agentCard}>
+                <Text style={styles.agentName}>{agent.name}</Text>
+                <Text style={styles.agentRole}>{agent.role}</Text>
+                <Text style={styles.agentStatus}>{agent.status}</Text>
+              </View>
+            ))}
+          </View>
+        </Section>
+
+        <Section
+          title="Core Assessment"
+          subtitle="Tell Cipher about your work history and goals."
+        >
+          <Field
+            label="Name"
+            value={profile.name}
+            onChangeText={(value) => updateProfile('name', value)}
+            placeholder="Your name"
+          />
+          <Field
+            label="Current or recent role"
+            value={profile.currentRole}
+            onChangeText={(value) => updateProfile('currentRole', value)}
+            placeholder="e.g., Product Manager"
+          />
+          <Field
+            label="Years of experience"
+            value={profile.yearsExperience}
+            onChangeText={(value) => updateProfile('yearsExperience', value)}
+            placeholder="e.g., 6"
+          />
+          <Field
+            label="Education"
+            value={profile.education}
+            onChangeText={(value) => updateProfile('education', value)}
+            placeholder="Degrees, schools, or training"
+          />
+          <Field
+            label="Certifications"
+            value={profile.certifications}
+            onChangeText={(value) => updateProfile('certifications', value)}
+            placeholder="Relevant certifications"
+          />
+          <Field
+            label="Industry focus"
+            value={profile.industries}
+            onChangeText={(value) => updateProfile('industries', value)}
+            placeholder="Industries you want to target"
+          />
+          <Field
+            label="Location"
+            value={profile.location}
+            onChangeText={(value) => updateProfile('location', value)}
+            placeholder="City, region, or time zone"
+          />
+          <ToggleRow
+            label="Willing to relocate"
+            value={profile.willingToRelocate}
+            onValueChange={(value) => updateProfile('willingToRelocate', value)}
+          />
+          <ToggleRow
+            label="Open to international opportunities"
+            value={profile.openToInternational}
+            onValueChange={(value) => updateProfile('openToInternational', value)}
+          />
+        </Section>
+
+        <Section
+          title="Demographics (Required)"
+          subtitle="Cipher uses this to provide realistic, tailored guidance."
+        >
+          <Field
+            label="Age"
+            value={profile.age}
+            onChangeText={(value) => updateProfile('age', value)}
+            placeholder="e.g., 34"
+            keyboardType="numeric"
+          />
+          <Field
+            label="Gender"
+            value={profile.gender}
+            onChangeText={(value) => updateProfile('gender', value)}
+            placeholder="e.g., Woman, Man, Non-binary"
+          />
+          <Field
+            label="Race/Ethnicity"
+            value={profile.raceEthnicity}
+            onChangeText={(value) => updateProfile('raceEthnicity', value)}
+            placeholder="e.g., Black, Hispanic/Latino, Asian"
+          />
+        </Section>
+
+        <Section title="Experience Signals" subtitle="Transferable skills discovery">
+          <Field
+            label="Hobbies"
+            value={profile.hobbies}
+            onChangeText={(value) => updateProfile('hobbies', value)}
+            placeholder="Activities that show skills"
+            multiline
+          />
+          <Field
+            label="Volunteer work"
+            value={profile.volunteer}
+            onChangeText={(value) => updateProfile('volunteer', value)}
+            placeholder="Leadership or community work"
+            multiline
+          />
+          <Field
+            label="Side projects"
+            value={profile.sideProjects}
+            onChangeText={(value) => updateProfile('sideProjects', value)}
+            placeholder="Portfolio or side initiatives"
+            multiline
+          />
+          <Field
+            label="Additional notes"
+            value={profile.notes}
+            onChangeText={(value) => updateProfile('notes', value)}
+            placeholder="Anything else Cipher should know"
+            multiline
+          />
+        </Section>
+
+        <Section title="Goals and Risk Profile" subtitle="Define the path you want">
+          <Text style={styles.label}>Career goals</Text>
+          <View style={styles.optionRow}>
+            {goalOptions.map((goal) => (
+              <Chip
+                key={goal}
+                label={goal}
+                selected={profile.careerGoals.includes(goal)}
+                onPress={() => toggleGoal(goal)}
+              />
+            ))}
+          </View>
+          <Text style={styles.label}>Risk tolerance</Text>
+          <View style={styles.optionRow}>
+            {riskOptions.map((option) => (
+              <Chip
+                key={option}
+                label={option}
+                selected={profile.riskTolerance === option}
+                onPress={() => updateProfile('riskTolerance', option)}
+              />
+            ))}
+          </View>
+          <Text style={styles.label}>AI literacy level</Text>
+          <View style={styles.optionRow}>
+            {aiOptions.map((option) => (
+              <Chip
+                key={option}
+                label={option}
+                selected={profile.aiLiteracy === option}
+                onPress={() => updateProfile('aiLiteracy', option)}
+              />
+            ))}
+          </View>
+        </Section>
+
+        <Section
+          title="Skill Inventory"
+          subtitle="Add skills and evidence so Cipher can rank market value."
+        >
+          <Field
+            label="Skill name"
+            value={skillName}
+            onChangeText={setSkillName}
+            placeholder="e.g., Strategic planning"
+          />
+          <Text style={styles.label}>Skill category</Text>
+          <View style={styles.optionRow}>
+            {SKILL_CATEGORIES.map((category) => (
+              <Chip
+                key={category.value}
+                label={category.label}
+                selected={skillCategory === category.value}
+                onPress={() => setSkillCategory(category.value)}
+              />
+            ))}
+          </View>
+          <Field
+            label="Years of experience"
+            value={skillYears}
+            onChangeText={setSkillYears}
+            placeholder="e.g., 4"
+            keyboardType="numeric"
+          />
+          <Field
+            label="Evidence (project, impact, or story)"
+            value={skillEvidence}
+            onChangeText={setSkillEvidence}
+            placeholder="Describe proof of impact"
+            multiline
+          />
+          <Field
+            label="Enjoyment (1-5)"
+            value={skillEnjoyment}
+            onChangeText={setSkillEnjoyment}
+            placeholder="1-5"
+            keyboardType="numeric"
+          />
+          <Pressable style={styles.primaryButton} onPress={addSkill}>
+            <Text style={styles.primaryButtonText}>Add Skill</Text>
+          </Pressable>
+          {skills.length === 0 ? (
+            <Text style={styles.helper}>No skills added yet.</Text>
+          ) : (
+            skills.map((skill) => (
+              <View key={skill.id} style={styles.skillCard}>
+                <View style={styles.skillHeader}>
+                  <Text style={styles.skillName}>{skill.name}</Text>
+                  <Pressable onPress={() => removeSkill(skill.id)}>
+                    <Text style={styles.removeText}>Remove</Text>
+                  </Pressable>
+                </View>
+                <Text style={styles.skillMeta}>
+                  {skill.category} | {skill.years} yrs | enjoyment {skill.enjoyment}/5
+                </Text>
+                {skill.evidence ? (
+                  <Text style={styles.skillEvidence}>{skill.evidence}</Text>
+                ) : null}
+              </View>
+            ))
+          )}
+        </Section>
+
+        <Section
+          title="Market Snapshot"
+          subtitle="Provide recent market signals so Cipher can tailor advice."
+        >
+          <Field
+            label="Date of latest market scan"
+            value={market.updatedAt}
+            onChangeText={(value) => updateMarket('updatedAt', value)}
+            placeholder="e.g., 2026-02-05"
+          />
+          <Field
+            label="Economic indicators"
+            value={market.indicators}
+            onChangeText={(value) => updateMarket('indicators', value)}
+            placeholder="Unemployment, job openings, GDP notes"
+            multiline
+          />
+          <Field
+            label="Hiring trends"
+            value={market.hiringTrends}
+            onChangeText={(value) => updateMarket('hiringTrends', value)}
+            placeholder="Which sectors are hiring or freezing?"
+            multiline
+          />
+          <Field
+            label="Layoff patterns"
+            value={market.layoffs}
+            onChangeText={(value) => updateMarket('layoffs', value)}
+            placeholder="Recent layoffs or restructures"
+            multiline
+          />
+          <Field
+            label="Funding or M&A activity"
+            value={market.funding}
+            onChangeText={(value) => updateMarket('funding', value)}
+            placeholder="Funding rounds, acquisitions, IPO notes"
+            multiline
+          />
+          <Field
+            label="AI hiring or automation trends"
+            value={market.aiTrends}
+            onChangeText={(value) => updateMarket('aiTrends', value)}
+            placeholder="AI teams hiring, automation announcements"
+            multiline
+          />
+          <Field
+            label="Sources"
+            value={market.sources}
+            onChangeText={(value) => updateMarket('sources', value)}
+            placeholder="BLS, LinkedIn, WEF, Glassdoor, etc."
+          />
+        </Section>
+
+        <Section
+          title="LinkedIn Network Analysis"
+          subtitle="Upload Connections.csv or paste it for deeper insights."
+        >
+          <Text style={styles.helper}>
+            Cipher can analyze your network to surface warm introductions, hiring
+            managers, and gaps. Your data stays on device.
+          </Text>
+          <Text style={styles.helper}>
+            Download steps: Settings & Privacy -> Data Privacy -> Get a copy of your data ->
+            Connections -> Request archive.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={handleLinkedInPick}>
+            <Text style={styles.secondaryButtonText}>
+              {Platform.OS === 'web' ? 'Upload CSV (web)' : 'Pick CSV file'}
+            </Text>
+          </Pressable>
+          {linkedInStatus ? <Text style={styles.helper}>{linkedInStatus}</Text> : null}
+          <Field
+            label="Or paste Connections.csv here"
+            value={linkedInCsv}
+            onChangeText={setLinkedInCsv}
+            placeholder="Paste CSV content"
+            multiline
+          />
+          {connections.length ? (
+            <Text style={styles.helper}>
+              Parsed {connections.length} connections from LinkedIn CSV.
+            </Text>
+          ) : null}
+        </Section>
+
+        {missingFields.length ? (
+          <Section
+            title="Missing Required Inputs"
+            subtitle="Complete these for full analysis."
+          >
+            {missingFields.map((field) => (
+              <Text key={field} style={styles.missingText}>
+                - {field}
+              </Text>
+            ))}
+          </Section>
+        ) : null}
+
+        <Section title="Cipher Report" subtitle="Generated insights and action plan.">
+          <ReportSectionView section={report.marketSnapshot} />
+          <ReportSectionView section={report.aiResilience} />
+          <ReportSectionView section={report.aiForward} />
+          <ReportSectionView section={report.demographicStrategy} />
+          <ReportSectionView section={report.careerInsights} />
+
+          <Text style={styles.sectionTitle}>Skills Portfolio</Text>
+          {report.skillsPortfolio.length ? (
+            report.skillsPortfolio.map((skill) => (
+              <View key={skill.name} style={styles.reportCard}>
+                <Text style={styles.reportTitle}>
+                  {skill.name} ({skill.category})
+                </Text>
+                <Text style={styles.reportMeta}>
+                  Market value score: {skill.marketValueScore} | Demand: {skill.demandLevel} |
+                  Scarcity: {skill.scarcity} | Premium: {skill.compensationPremium}
+                </Text>
+                <Text style={styles.reportMeta}>
+                  AI risk: {skill.aiRisk} ({skill.aiImpactTimeline})
+                </Text>
+                <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
+                <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
+                <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
+                <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
+                {skill.aiTools.length ? (
+                  <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
+                ) : null}
+                <Text style={styles.reportText}>
+                  10-year value strategy: {skill.valueMaintenance.join(' ')}
+                </Text>
+                <Text style={styles.reportText}>
+                  Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
+                  {skill.projections.tenYear}
+                </Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.helper}>Add skills to generate a portfolio.</Text>
+          )}
+
+          <Text style={styles.sectionTitle}>Career Path Options</Text>
+          {report.careerPaths.map((path) => (
+            <View key={path.tier} style={styles.reportCard}>
+              <Text style={styles.reportTitle}>{path.tier}</Text>
+              <Text style={styles.reportText}>{path.title}</Text>
+              <Text style={styles.reportText}>{path.overview}</Text>
+              <Text style={styles.reportText}>Risk/reward: {path.riskReward}</Text>
+              <Text style={styles.reportText}>
+                Earning potential: {path.earningPotential}
+              </Text>
+              <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
+              <Text style={styles.reportSubheading}>3-Year Plan</Text>
+              {path.threeYearPlan.year1.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - Year 1: {item}
+                </Text>
+              ))}
+              {path.threeYearPlan.year2.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - Year 2: {item}
+                </Text>
+              ))}
+              {path.threeYearPlan.year3.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - Year 3: {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>5-Year Plan</Text>
+              {path.fiveYearPlan.year4.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - Year 4: {item}
+                </Text>
+              ))}
+              {path.fiveYearPlan.year5.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - Year 5: {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Learning Path</Text>
+              {path.learningPath.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Projects</Text>
+              {path.projects.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Earnings Strategy</Text>
+              {path.earningsStrategy.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Differentials</Text>
+              {path.differentials.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Real-life Examples</Text>
+              {path.examples.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+            </View>
+          ))}
+
+          <ReportSectionView section={report.learningRoadmap} />
+          <ReportSectionView section={report.skillsGapResources} />
+          <ReportSectionView section={report.competencyMilestones} />
+          <ReportSectionView section={report.projectsToPursue} />
+          <ReportSectionView section={report.earningsMaximization} />
+          <ReportSectionView section={report.opportunityMap} />
+          <ReportSectionView section={report.gapAnalysis} />
+          <ReportSectionView section={report.geographicOptions} />
+          {report.internationalPlan ? (
+            <ReportSectionView section={report.internationalPlan} />
+          ) : null}
+          {report.entrepreneurshipPlan ? (
+            <ReportSectionView section={report.entrepreneurshipPlan} />
+          ) : null}
+          <ReportSectionView section={report.actionPlan} />
+          <ReportSectionView section={report.marketOutlook} />
+
+          {report.networkReport ? (
+            <View style={styles.reportCard}>
+              <Text style={styles.reportTitle}>LinkedIn Network Analysis</Text>
+              <Text style={styles.reportText}>
+                Total connections: {report.networkReport.totalConnections}
+              </Text>
+              <Text style={styles.reportSubheading}>Industry breakdown</Text>
+              {report.networkReport.industryBreakdown.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Seniority breakdown</Text>
+              {report.networkReport.seniorityBreakdown.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Company breakdown</Text>
+              {report.networkReport.companyBreakdown.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Geography</Text>
+              {report.networkReport.geographyBreakdown.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Hiring managers</Text>
+              {report.networkReport.hiringManagers.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Recruiters</Text>
+              {report.networkReport.recruiters.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Warm introduction paths</Text>
+              {report.networkReport.warmIntroductions.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Network gaps</Text>
+              {report.networkReport.gaps.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Networking action plan</Text>
+              {report.networkReport.actionPlan.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+        </Section>
+      </ScrollView>
+    </SafeAreaView>
+  );
+}
+
+const Section = ({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string;
+  subtitle?: string;
+  children: React.ReactNode;
+}) => (
+  <View style={styles.section}>
+    <Text style={styles.sectionTitle}>{title}</Text>
+    {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
+    {children}
+  </View>
+);
+
+const Field = ({
+  label,
+  value,
+  onChangeText,
+  placeholder,
+  multiline,
+  keyboardType,
+}: {
+  label: string;
+  value: string;
+  onChangeText: (value: string) => void;
+  placeholder?: string;
+  multiline?: boolean;
+  keyboardType?: 'default' | 'numeric';
+}) => (
+  <View style={styles.field}>
+    <Text style={styles.label}>{label}</Text>
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      placeholder={placeholder}
+      placeholderTextColor={colors.muted}
+      style={[styles.input, multiline ? styles.inputMultiline : null]}
+      multiline={multiline}
+      keyboardType={keyboardType}
+    />
+  </View>
+);
+
+const ToggleRow = ({
+  label,
+  value,
+  onValueChange,
+}: {
+  label: string;
+  value: boolean;
+  onValueChange: (value: boolean) => void;
+}) => (
+  <View style={styles.toggleRow}>
+    <Text style={styles.label}>{label}</Text>
+    <Switch value={value} onValueChange={onValueChange} />
+  </View>
+);
+
+const Chip = ({
+  label,
+  selected,
+  onPress,
+}: {
+  label: string;
+  selected: boolean;
+  onPress: () => void;
+}) => (
+  <Pressable
+    style={[styles.chip, selected ? styles.chipSelected : null]}
+    onPress={onPress}
+  >
+    <Text style={[styles.chipText, selected ? styles.chipTextSelected : null]}>
+      {label}
+    </Text>
+  </Pressable>
+);
+
+const ReportSectionView = ({ section }: { section: { title: string; summary: string; bullets?: string[] } }) => (
+  <View style={styles.reportCard}>
+    <Text style={styles.reportTitle}>{section.title}</Text>
+    <Text style={styles.reportText}>{section.summary}</Text>
+    {section.bullets?.map((item) => (
+      <Text key={item} style={styles.reportBullet}>
+        - {item}
+      </Text>
+    ))}
+  </View>
+);
+
+const colors = {
+  background: '#0f1117',
+  card: '#171a23',
+  border: '#2b313d',
+  text: '#f4f6fb',
+  muted: '#9aa4b2',
+  accent: '#5b8def',
+  accentStrong: '#6c9dff',
+  danger: '#e26d6d',
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.background,
+  },
+  container: {
+    padding: 20,
+    paddingBottom: 80,
+  },
+  title: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  subtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    marginBottom: 20,
+  },
+  section: {
+    backgroundColor: colors.card,
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  sectionTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '600',
+    marginBottom: 6,
+  },
+  sectionSubtitle: {
+    color: colors.muted,
+    marginBottom: 12,
+  },
+  field: {
+    marginBottom: 12,
+  },
+  label: {
+    color: colors.text,
+    marginBottom: 6,
+  },
+  input: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    padding: 10,
+    color: colors.text,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  inputMultiline: {
+    minHeight: 90,
+    textAlignVertical: 'top',
+  },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  optionRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  chip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 16,
+  },
+  chipSelected: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  chipText: {
+    color: colors.text,
+  },
+  chipTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  primaryButton: {
+    backgroundColor: colors.accentStrong,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  primaryButtonText: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  secondaryButton: {
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  secondaryButtonText: {
+    color: colors.accentStrong,
+    fontWeight: '600',
+  },
+  helper: {
+    color: colors.muted,
+    marginBottom: 8,
+  },
+  missingText: {
+    color: colors.danger,
+  },
+  skillCard: {
+    backgroundColor: '#121725',
+    padding: 12,
+    borderRadius: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  skillHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  skillName: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  removeText: {
+    color: colors.danger,
+  },
+  skillMeta: {
+    color: colors.muted,
+    marginTop: 4,
+  },
+  skillEvidence: {
+    color: colors.text,
+    marginTop: 6,
+  },
+  agentGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  agentCard: {
+    backgroundColor: '#121725',
+    padding: 10,
+    borderRadius: 10,
+    minWidth: 140,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  agentName: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  agentRole: {
+    color: colors.muted,
+    marginTop: 4,
+  },
+  agentStatus: {
+    color: colors.accentStrong,
+    marginTop: 6,
+    fontWeight: '600',
+  },
+  reportCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  reportTitle: {
+    color: colors.text,
+    fontWeight: '700',
+    marginBottom: 6,
+  },
+  reportText: {
+    color: colors.text,
+    marginBottom: 6,
+  },
+  reportMeta: {
+    color: colors.muted,
+    marginBottom: 6,
+  },
+  reportBullet: {
+    color: colors.text,
+    marginBottom: 4,
+  },
+  reportSubheading: {
+    color: colors.accentStrong,
+    fontWeight: '600',
+    marginTop: 8,
+    marginBottom: 4,
+  },
+});
