@@ -19,6 +19,15 @@ npm run android # Android emulator or device
 npm run ios     # iOS simulator (macOS required)
 ```
 
+## GitHub Pages
+
+The Expo web build is deployed via GitHub Actions to GitHub Pages. Once the
+workflow completes, the app is available at:
+
+```
+https://jenkinsl8.github.io/cipher/
+```
+
 ## What the app does
 
 - Collects work history, skills, demographics, and goals
