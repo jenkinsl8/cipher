@@ -74,14 +74,17 @@ export default function App() {
   const [skillEnjoyment, setSkillEnjoyment] = useState('3');
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
+  const [resumeText, setResumeText] = useState('');
+  const [resumeStatus, setResumeStatus] = useState('');
+  const [resumeFileName, setResumeFileName] = useState('');
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
     [linkedInCsv]
   );
   const report = useMemo(
-    () => generateCipherReport(profile, skills, market, connections),
-    [profile, skills, market, connections]
+    () => generateCipherReport(profile, skills, market, connections, resumeText),
+    [profile, skills, market, connections, resumeText]
   );
 
   const missingFields = useMemo(() => {
@@ -152,6 +155,47 @@ export default function App() {
       setLinkedInStatus(`Loaded ${content.split('\n').length} lines.`);
     } catch (error) {
       setLinkedInStatus('Could not load the CSV file.');
+    }
+  };
+
+  const handleResumePick = async () => {
+    setResumeStatus('');
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: [
+          'text/plain',
+          'text/markdown',
+          'text/rtf',
+          'application/pdf',
+          'application/msword',
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        ],
+        copyToCacheDirectory: true,
+      });
+      if (result.canceled) return;
+      const asset = result.assets && result.assets[0];
+      if (!asset?.uri) return;
+
+      const name = asset.name || 'resume';
+      setResumeFileName(name);
+      const lower = name.toLowerCase();
+      const isPlainText =
+        lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.rtf');
+
+      if (!isPlainText) {
+        setResumeStatus(
+          'Uploaded. For ATS scan accuracy, paste resume text below (PDF/DOCX parsing not supported).'
+        );
+        return;
+      }
+
+      const content = await FileSystem.readAsStringAsync(asset.uri, {
+        encoding: FileSystem.EncodingType.UTF8,
+      });
+      setResumeText(content);
+      setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
+    } catch (error) {
+      setResumeStatus('Could not load the resume file.');
     }
   };
 
@@ -502,6 +546,31 @@ export default function App() {
           ) : null}
         </Section>
 
+        <Section
+          title="Resume Upload and ATS Scan"
+          subtitle="Upload or paste your resume to analyze ATS readiness."
+        >
+          <Text style={styles.helper}>
+            Cipher performs an ATS scan to gauge resume readability and keyword alignment.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
+            <Text style={styles.secondaryButtonText}>
+              {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
+            </Text>
+          </Pressable>
+          {resumeFileName ? (
+            <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
+          ) : null}
+          {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
+          <Field
+            label="Or paste resume text here"
+            value={resumeText}
+            onChangeText={setResumeText}
+            placeholder="Paste resume text for ATS scan"
+            multiline
+          />
+        </Section>
+
         {missingFields.length ? (
           <Section
             title="Missing Required Inputs"
@@ -644,6 +713,56 @@ export default function App() {
           <ReportSectionView section={report.actionPlan} />
           <ReportSectionView section={report.marketOutlook} />
 
+          {report.resumeAnalysis ? (
+            <View style={styles.reportCard}>
+              <Text style={styles.reportTitle}>Resume ATS Scan</Text>
+              <Text style={styles.reportText}>
+                ATS score: {report.resumeAnalysis.atsScore} (
+                {report.resumeAnalysis.atsReadiness})
+              </Text>
+              <Text style={styles.reportMeta}>
+                Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
+                {report.resumeAnalysis.keywordCoverage}%
+              </Text>
+              <Text style={styles.reportSubheading}>Sections detected</Text>
+              {report.resumeAnalysis.sectionsPresent.length ? (
+                report.resumeAnalysis.sectionsPresent.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))
+              ) : (
+                <Text style={styles.reportBullet}>- None detected</Text>
+              )}
+              {report.resumeAnalysis.missingSections.length ? (
+                <>
+                  <Text style={styles.reportSubheading}>Missing sections</Text>
+                  {report.resumeAnalysis.missingSections.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+              {report.resumeAnalysis.flags.length ? (
+                <>
+                  <Text style={styles.reportSubheading}>ATS flags</Text>
+                  {report.resumeAnalysis.flags.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+              <Text style={styles.reportSubheading}>Recommendations</Text>
+              {report.resumeAnalysis.recommendations.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+            </View>
+          ) : null}
+
           {report.networkReport ? (
             <View style={styles.reportCard}>
               <Text style={styles.reportTitle}>LinkedIn Network Analysis</Text>
@@ -688,6 +807,24 @@ export default function App() {
               ))}
               <Text style={styles.reportSubheading}>Warm introduction paths</Text>
               {report.networkReport.warmIntroductions.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Priority order</Text>
+              {report.networkReport.priorityOrder.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Outreach templates</Text>
+              {report.networkReport.outreachTemplates.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>What to ask for</Text>
+              {report.networkReport.whatToAsk.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>

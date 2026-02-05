@@ -18,6 +18,7 @@ import {
   MarketSnapshot,
   NetworkReport,
   ReportSection,
+  ResumeAnalysis,
   SkillInput,
   SkillInsight,
   SkillCategory,
@@ -193,7 +194,10 @@ const inferSeniority = (title: string) => {
   return 'Mid-level';
 };
 
-const buildNetworkReport = (connections: LinkedInConnection[]): NetworkReport => {
+const buildNetworkReport = (
+  connections: LinkedInConnection[],
+  profile: UserProfile
+): NetworkReport => {
   const totalConnections = connections.length;
   const industryCount = new Map<string, number>();
   const seniorityCount = new Map<string, number>();
@@ -245,6 +249,9 @@ const buildNetworkReport = (connections: LinkedInConnection[]): NetworkReport =>
     .slice(0, 8)
     .map((connection) => `${connection.company} - ${connection.position}`);
 
+  const targetFocus = profile.currentRole || 'your target role';
+  const targetIndustry = profile.industries || 'your target industry';
+
   return {
     totalConnections,
     industryBreakdown: toBreakdown(industryCount),
@@ -258,6 +265,23 @@ const buildNetworkReport = (connections: LinkedInConnection[]): NetworkReport =>
     warmIntroductions: warmIntroductions.length
       ? warmIntroductions
       : ['Add LinkedIn data to surface warm introductions.'],
+    priorityOrder: [
+      `Hiring managers aligned with ${targetFocus}`,
+      `Warm introductions at ${targetIndustry} companies`,
+      'Recruiters specializing in your function',
+      'Peers who can validate your skills with referrals',
+    ],
+    outreachTemplates: [
+      `Hi [Name], I noticed your work in ${targetIndustry}. I'm exploring ${targetFocus} roles and would value a 15-minute chat to learn how your team hires and what stands out.`,
+      `Hi [Name], I'm mapping opportunities in ${targetIndustry}. Would you be open to an informational chat or pointing me to the right hiring manager?`,
+      `Hi [Name], I saw you recruit for roles like ${targetFocus}. I'd appreciate any insight on current openings or skills you prioritize.`,
+    ],
+    whatToAsk: [
+      'Ask for a 15-minute informational interview.',
+      'Request a referral when there is a strong role match.',
+      'Ask for feedback on your positioning and resume.',
+      'Ask for introductions to hiring managers or team leads.',
+    ],
     gaps: [
       'Identify missing seniority levels in target industry.',
       'Add more connections at hiring manager and recruiter levels.',
@@ -268,6 +292,127 @@ const buildNetworkReport = (connections: LinkedInConnection[]): NetworkReport =>
       'Request warm introductions to target companies.',
       'Build a weekly networking cadence (2-3 new connections per week).',
     ],
+  };
+};
+
+const buildResumeAnalysis = (
+  profile: UserProfile,
+  skills: SkillInput[],
+  resumeText: string
+): ResumeAnalysis | undefined => {
+  const trimmed = resumeText.trim();
+  const requiredSections = ['Summary', 'Experience', 'Education', 'Skills'];
+
+  if (!trimmed) {
+    return {
+      atsScore: 0,
+      atsReadiness: 'Low',
+      wordCount: 0,
+      keywordCoverage: 0,
+      sectionsPresent: [],
+      missingSections: requiredSections,
+      flags: ['Resume content missing. Upload or paste your resume for ATS scan.'],
+      recommendations: [
+        'Paste your resume in plain text for ATS analysis.',
+        'Use standard headings: Summary, Experience, Education, Skills.',
+        'Avoid tables, columns, and graphics in the ATS version.',
+      ],
+    };
+  }
+
+  const textLower = trimmed.toLowerCase();
+  const words = trimmed.split(/\s+/).filter(Boolean);
+  const wordCount = words.length;
+  const lines = trimmed.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const bulletLines = lines.filter((line) => /^(\s*[-*])/.test(line.trim()));
+  const bulletRatio = lines.length ? bulletLines.length / lines.length : 0;
+
+  const sectionChecks = [
+    { label: 'Summary', regex: /summary|professional summary|profile/i },
+    { label: 'Experience', regex: /experience|work history|employment/i },
+    { label: 'Education', regex: /education|academic/i },
+    { label: 'Skills', regex: /skills|core competencies|expertise/i },
+    { label: 'Certifications', regex: /certification|certificate|license/i },
+    { label: 'Projects', regex: /projects|portfolio/i },
+    { label: 'Volunteer', regex: /volunteer|community/i },
+  ];
+
+  const sectionsPresent = sectionChecks
+    .filter((section) => section.regex.test(trimmed))
+    .map((section) => section.label);
+  const missingSections = requiredSections.filter(
+    (section) => !sectionsPresent.includes(section)
+  );
+
+  const emailRegex = /\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b/i;
+  const phoneRegex = /(\+?\d[\d\s().-]{7,}\d)/;
+  const hasEmail = emailRegex.test(trimmed);
+  const hasPhone = phoneRegex.test(trimmed);
+  const hasDates = /(19|20)\d{2}/.test(trimmed);
+  const hasTables = /\t|\|/.test(trimmed);
+
+  const keywordSource = [
+    profile.currentRole,
+    profile.industries,
+    profile.certifications,
+    ...skills.map((skill) => skill.name),
+  ]
+    .join(' ')
+    .toLowerCase()
+    .split(/[,/]|and|&/)
+    .map((item) => item.trim())
+    .filter((item) => item.length > 2);
+
+  const uniqueKeywords = Array.from(new Set(keywordSource)).filter(Boolean);
+  const keywordMatches = uniqueKeywords.filter((keyword) => textLower.includes(keyword));
+  const keywordCoverage = uniqueKeywords.length
+    ? keywordMatches.length / uniqueKeywords.length
+    : 0;
+
+  let atsScore = 100;
+  if (wordCount < 250 || wordCount > 1000) atsScore -= 15;
+  if (!hasEmail) atsScore -= 15;
+  if (!hasPhone) atsScore -= 15;
+  if (!hasDates) atsScore -= 5;
+  if (bulletRatio < 0.1) atsScore -= 5;
+  if (bulletRatio > 0.65) atsScore -= 3;
+  if (keywordCoverage < 0.3) atsScore -= 10;
+  else if (keywordCoverage < 0.5) atsScore -= 5;
+  if (missingSections.length) atsScore -= missingSections.length * 5;
+  if (hasTables) atsScore -= 5;
+  if (trimmed.length < 500) atsScore -= 10;
+
+  atsScore = clamp(atsScore, 0, 100);
+  const atsReadiness =
+    atsScore >= 80 ? 'High' : atsScore >= 60 ? 'Moderate' : 'Low';
+
+  const flags: string[] = [];
+  if (!hasEmail) flags.push('Missing email address.');
+  if (!hasPhone) flags.push('Missing phone number.');
+  if (!hasDates) flags.push('No dates detected; add years for each role.');
+  if (wordCount < 250) flags.push('Resume is shorter than typical ATS range.');
+  if (wordCount > 1000) flags.push('Resume is longer than typical ATS range.');
+  if (bulletRatio < 0.1) flags.push('Low bullet usage; ATS prefers scannable bullets.');
+  if (hasTables) flags.push('Potential table or column formatting detected.');
+  if (missingSections.length) flags.push('Missing standard headings.');
+
+  const recommendations = [
+    'Use a single-column layout with standard headings (Summary, Experience, Education, Skills).',
+    'Ensure each role has dates, location, and measurable outcomes.',
+    'Mirror key skills from job descriptions to raise keyword coverage.',
+    'Avoid tables, columns, graphics, or text boxes in the ATS version.',
+    'Keep the resume between 1-2 pages and 350-800 words where possible.',
+  ];
+
+  return {
+    atsScore,
+    atsReadiness,
+    wordCount,
+    keywordCoverage: Math.round(keywordCoverage * 100),
+    sectionsPresent,
+    missingSections,
+    flags,
+    recommendations,
   };
 };
 
@@ -758,7 +903,8 @@ export const generateCipherReport = (
   profile: UserProfile,
   skills: SkillInput[],
   market: MarketSnapshot,
-  connections: LinkedInConnection[]
+  connections: LinkedInConnection[],
+  resumeText: string
 ): CipherReport => {
   const skillInsights = skills.map(buildSkillInsight);
   const rankedSkills = [...skillInsights].sort(
@@ -807,9 +953,10 @@ export const generateCipherReport = (
     entrepreneurshipPlan: profile.careerGoals.includes('Entrepreneurship')
       ? buildEntrepreneurshipPlan()
       : undefined,
+    resumeAnalysis: buildResumeAnalysis(profile, skills, resumeText),
     actionPlan: buildActionPlan(),
     marketOutlook: buildMarketOutlook(),
-    networkReport: connections.length ? buildNetworkReport(connections) : undefined,
+    networkReport: connections.length ? buildNetworkReport(connections, profile) : undefined,
   };
 
   return report;

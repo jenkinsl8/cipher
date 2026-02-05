@@ -25,4 +25,5 @@ npm run ios     # iOS simulator (macOS required)
 - Builds a skills portfolio with AI impact analysis per skill
 - Produces AI-forward opportunities and learning roadmaps
 - Supports LinkedIn Connections CSV upload for network analysis
+- Offers resume upload with ATS readiness scan and recommendations
 - Outputs multi-tier career paths with 3-year and 5-year plans

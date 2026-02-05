@@ -129,8 +129,22 @@ export type NetworkReport = {
   hiringManagers: string[];
   recruiters: string[];
   warmIntroductions: string[];
+  priorityOrder: string[];
+  outreachTemplates: string[];
+  whatToAsk: string[];
   gaps: string[];
   actionPlan: string[];
+};
+
+export type ResumeAnalysis = {
+  atsScore: number;
+  atsReadiness: 'Low' | 'Moderate' | 'High';
+  wordCount: number;
+  keywordCoverage: number;
+  sectionsPresent: string[];
+  missingSections: string[];
+  flags: string[];
+  recommendations: string[];
 };
 
 export type CipherReport = {
@@ -151,6 +165,7 @@ export type CipherReport = {
   geographicOptions: ReportSection;
   internationalPlan?: ReportSection;
   entrepreneurshipPlan?: ReportSection;
+  resumeAnalysis?: ResumeAnalysis;
   actionPlan: ReportSection;
   marketOutlook: ReportSection;
   networkReport?: NetworkReport;
