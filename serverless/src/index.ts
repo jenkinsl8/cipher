@@ -263,8 +263,10 @@ export default {
     const file = body?.file;
     const fileExtraction = await extractTextFromFile(file);
     const warnings: string[] = [...fileExtraction.warnings];
-    const finalText =
-      resumeText && resumeText.length >= 80 ? resumeText : fileExtraction.text;
+    if (resumeText && resumeText.length < 80) {
+      warnings.push('Resume text is short; extraction accuracy may be reduced.');
+    }
+    const finalText = resumeText || fileExtraction.text;
 
     if (!finalText) {
       return new Response(
