@@ -23,7 +23,10 @@ import {
   extractTextFromPdfBinary,
   parseResume,
 } from './src/utils/resume';
-import { parseResumeWithAI } from './src/utils/aiResumeParser';
+import {
+  parseResumeWithOpenAI,
+  parseResumeWithServerless,
+} from './src/utils/aiResumeParser';
 import {
   AILiteracy,
   CareerGoal,
@@ -114,7 +117,11 @@ export default function App() {
     data: string;
   } | null>(null);
   const [aiModel, setAiModel] = useState('gpt-4o');
-  const [aiBaseUrl, setAiBaseUrl] = useState('');
+  const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiParserMode, setAiParserMode] = useState<'openai' | 'serverless'>(
+    'openai'
+  );
   const [aiStatus, setAiStatus] = useState('');
   const [aiResumeExtraction, setAiResumeExtraction] = useState<ResumeExtraction | null>(null);
   const [useAiParser, setUseAiParser] = useState(false);
@@ -343,29 +350,48 @@ export default function App() {
     const text = resumeText.trim();
     const hasText = text.length >= 80;
     const hasFile = !!resumeFilePayload?.data;
-    if (!hasText && !hasFile) return;
+    if (aiParserMode === 'openai') {
+      if (!hasText) return;
+      if (!aiApiKey.trim()) return;
+    } else {
+      if (!hasText && !hasFile) return;
+      if (!aiBaseUrl.trim()) return;
+    }
     if (text === lastAutoParsed) return;
-    if (!aiBaseUrl.trim()) return;
     const timer = setTimeout(() => {
       handleAiResumeParse(true);
     }, 800);
     return () => clearTimeout(timer);
-  }, [resumeText, resumeFilePayload, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
+  }, [
+    resumeText,
+    resumeFilePayload,
+    autoParseEnabled,
+    aiBaseUrl,
+    aiModel,
+    aiApiKey,
+    aiParserMode,
+    lastAutoParsed,
+  ]);
 
   const handleAiResumeParse = async (isAuto = false) => {
-    if (!resumeText.trim() && !resumeFilePayload?.data) {
+    if (aiParserMode === 'openai' && !resumeText.trim()) {
       if (!isAuto) {
         setAiStatus('Add resume text before running the AI parser.');
       }
       return;
     }
-    if (!aiBaseUrl.trim()) {
+    if (aiParserMode === 'serverless' && !aiBaseUrl.trim()) {
       if (!isAuto) {
         setAiStatus('Add the AI parser URL before running.');
       }
       return;
     }
-    if (isHttpsContext() && aiBaseUrl.startsWith('http://') && !isLocalUrl(aiBaseUrl)) {
+    if (
+      aiParserMode === 'serverless' &&
+      isHttpsContext() &&
+      aiBaseUrl.startsWith('http://') &&
+      !isLocalUrl(aiBaseUrl)
+    ) {
       if (!isAuto) {
         setAiStatus(
           'AI parser URL must be https when the app is served over https.'
@@ -373,17 +399,35 @@ export default function App() {
       }
       return;
     }
+    if (aiParserMode === 'openai' && !aiApiKey.trim()) {
+      if (!isAuto) {
+        setAiStatus('Add your OpenAI API key before running.');
+      }
+      return;
+    }
 
     if (!isAuto) {
-      setAiStatus('Parsing resume with serverless AI...');
+      setAiStatus(
+        aiParserMode === 'openai'
+          ? 'Parsing resume with OpenAI...'
+          : 'Parsing resume with serverless AI...'
+      );
     }
     try {
-      const extraction = await parseResumeWithAI({
-        model: aiModel.trim() || 'gpt-4o',
-        baseUrl: aiBaseUrl.trim(),
-        resumeText,
-        file: resumeFilePayload || undefined,
-      });
+      const extraction =
+        aiParserMode === 'openai'
+          ? await parseResumeWithOpenAI({
+              apiKey: aiApiKey.trim(),
+              model: aiModel.trim() || 'gpt-4o',
+              baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
+              resumeText,
+            })
+          : await parseResumeWithServerless({
+              model: aiModel.trim() || 'gpt-4o',
+              baseUrl: aiBaseUrl.trim(),
+              resumeText,
+              file: resumeFilePayload || undefined,
+            });
       setAiResumeExtraction(extraction);
       setUseAiParser(true);
       setLastAutoParsed(resumeText.trim());
@@ -492,11 +536,33 @@ export default function App() {
           subtitle="Use an AI model to extract structured data from the resume."
         >
           <Text style={styles.helper}>
-            Runs automatically on upload via a serverless AI parser (no API key in app).
+            Choose how to parse: direct OpenAI (client key) or serverless endpoint.
           </Text>
-          <Text style={styles.helper}>
-            Deploy the Cloudflare Worker in /serverless and paste its URL here.
-          </Text>
+          <View style={styles.optionRow}>
+            <Chip
+              label="OpenAI API key"
+              selected={aiParserMode === 'openai'}
+              onPress={() => setAiParserMode('openai')}
+            />
+            <Chip
+              label="Serverless URL"
+              selected={aiParserMode === 'serverless'}
+              onPress={() => setAiParserMode('serverless')}
+            />
+          </View>
+          {aiParserMode === 'openai' ? (
+            <Field
+              label="OpenAI API key"
+              value={aiApiKey}
+              onChangeText={setAiApiKey}
+              placeholder="sk-..."
+              secureTextEntry
+            />
+          ) : (
+            <Text style={styles.helper}>
+              Deploy the serverless parser and paste its URL here.
+            </Text>
+          )}
           <Field
             label="Model"
             value={aiModel}
@@ -504,15 +570,25 @@ export default function App() {
             placeholder="gpt-4o"
           />
           <Field
-            label="AI parser URL"
+            label={aiParserMode === 'openai' ? 'OpenAI base URL' : 'AI parser URL'}
             value={aiBaseUrl}
             onChangeText={setAiBaseUrl}
-            placeholder="https://your-worker.workers.dev"
+            placeholder={
+              aiParserMode === 'openai'
+                ? 'https://api.openai.com'
+                : 'https://your-parser.example.com'
+            }
           />
           <Text style={styles.helper}>
             Tip: If the app is served over https (GitHub Pages), the parser URL must
             be https as well. http URLs will be blocked.
           </Text>
+          {aiParserMode === 'openai' ? (
+            <Text style={styles.helper}>
+              Note: Some browsers block direct API calls due to CORS. If this fails,
+              switch to the serverless parser.
+            </Text>
+          ) : null}
           <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
             <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>
           </Pressable>

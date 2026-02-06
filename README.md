@@ -37,6 +37,13 @@ local development and Pages hosting.
 To use the AI resume parser without placing an API key in the client, deploy the
 Vercel serverless endpoint in `vercel/` and paste its URL into the app.
 
+### Direct OpenAI (client-side)
+
+If you want to avoid serverless hosting, the app can call OpenAI directly using
+a user-provided API key. Enter the key in the **AI Resume Parser** section and
+select **OpenAI API key** mode. Note that some browsers block direct API calls
+due to CORS; if so, use the serverless option.
+
 ### Vercel (recommended)
 
 1. Create a Vercel project with **Root Directory** set to `vercel/`.
