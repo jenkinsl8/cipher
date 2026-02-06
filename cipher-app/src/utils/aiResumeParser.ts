@@ -7,6 +7,41 @@ type AiResumePayload = {
   warnings?: string[];
 };
 
+const buildJsonSchema = () => ({
+  name: 'resume_parse',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      profile: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string' },
+          currentRole: { type: 'string' },
+          yearsExperience: { type: 'string' },
+          education: { type: 'string' },
+          certifications: { type: 'string' },
+          industries: { type: 'string' },
+          location: { type: 'string' },
+        },
+        required: [
+          'name',
+          'currentRole',
+          'yearsExperience',
+          'education',
+          'certifications',
+          'industries',
+          'location',
+        ],
+      },
+      skills: { type: 'array', items: { type: 'string' } },
+      warnings: { type: 'array', items: { type: 'string' } },
+    },
+    required: ['profile', 'skills', 'warnings'],
+  },
+});
+
 const sanitizeList = (items?: string[]) =>
   (items || [])
     .map((item) => item.trim())
@@ -45,6 +80,27 @@ export const normalizeAiResumePayload = (payload: AiResumePayload): ResumeExtrac
     warnings: sanitizeList(payload.warnings),
     sections: {},
   };
+};
+
+const parseJsonSafely = (value: string) => {
+  try {
+    return JSON.parse(value);
+  } catch {
+    return null;
+  }
+};
+
+const extractJsonFromText = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const direct = parseJsonSafely(trimmed);
+  if (direct) return direct;
+  const first = trimmed.indexOf('{');
+  const last = trimmed.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    return parseJsonSafely(trimmed.slice(first, last + 1));
+  }
+  return null;
 };
 
 export const parseResumeWithServerless = async ({
@@ -109,14 +165,20 @@ export const parseResumeWithOpenAI = async ({
   apiKey,
   model,
   resumeText,
+  file,
   baseUrl = 'https://api.openai.com',
 }: {
   apiKey: string;
   model: string;
   resumeText: string;
+  file?: {
+    name: string;
+    mimeType: string;
+    data: string;
+  };
   baseUrl?: string;
 }): Promise<ResumeExtraction> => {
-  if (!resumeText.trim()) {
+  if (!resumeText.trim() && !file?.data) {
     return {
       profile: {},
       skills: [],
@@ -125,25 +187,7 @@ export const parseResumeWithOpenAI = async ({
     };
   }
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0,
-      response_format: { type: 'json_object' },
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
-        },
-        {
-          role: 'user',
-          content: `Parse the resume text and return JSON with:
+  const prompt = `Parse the resume text and return JSON with:
 {
   "profile": {
     "name": "",
@@ -165,7 +209,79 @@ Rules:
 - If data is missing, use an empty string or omit warnings.
 
 Resume text:
-${resumeText}`,
+${resumeText}`;
+
+  const headers = {
+    Authorization: `Bearer ${apiKey}`,
+    'Content-Type': 'application/json',
+  };
+
+  if (file?.data) {
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/responses`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({
+        model,
+        input: [
+          {
+            role: 'system',
+            content:
+              'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
+          },
+          {
+            role: 'user',
+            content: [
+              { type: 'input_text', text: prompt },
+              {
+                type: 'input_file',
+                file_data: file.data,
+                filename: file.name,
+                mime_type: file.mimeType,
+              },
+            ],
+          },
+        ],
+        response_format: { type: 'json_schema', json_schema: buildJsonSchema() },
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`AI parser failed (${response.status}): ${errorText}`);
+    }
+
+    const rawText = await response.text();
+    const data = parseJsonSafely(rawText);
+    const outputText =
+      data?.output?.[0]?.content?.find((item: { type?: string }) => item.type === 'output_text')
+        ?.text ||
+      data?.output_text ||
+      data?.output?.[0]?.content?.[0]?.text ||
+      '';
+
+    const parsed = extractJsonFromText(outputText);
+    if (!parsed) {
+      throw new Error('AI parser returned invalid JSON.');
+    }
+    return normalizeAiResumePayload(parsed);
+  }
+
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({
+      model,
+      temperature: 0,
+      response_format: { type: 'json_object' },
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
+        },
+        {
+          role: 'user',
+          content: prompt,
         },
       ],
     }),
@@ -182,12 +298,10 @@ ${resumeText}`,
     throw new Error('AI parser returned empty response.');
   }
 
-  let payload: AiResumePayload;
-  try {
-    payload = JSON.parse(content);
-  } catch (error) {
+  const parsed = extractJsonFromText(content);
+  if (!parsed) {
     throw new Error('AI parser returned invalid JSON.');
   }
 
-  return normalizeAiResumePayload(payload);
+  return normalizeAiResumePayload(parsed);
 };

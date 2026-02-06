@@ -421,6 +421,7 @@ export default function App() {
               model: aiModel.trim() || 'gpt-4o',
               baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
               resumeText,
+              file: resumeFilePayload || undefined,
             })
           : await parseResumeWithServerless({
               model: aiModel.trim() || 'gpt-4o',
@@ -586,7 +587,7 @@ export default function App() {
           {aiParserMode === 'openai' ? (
             <Text style={styles.helper}>
               Note: Some browsers block direct API calls due to CORS. If this fails,
-              switch to the serverless parser.
+              switch to the serverless parser. PDF files are sent directly to OpenAI.
             </Text>
           ) : null}
           <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>

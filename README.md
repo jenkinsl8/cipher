@@ -44,6 +44,8 @@ a user-provided API key. Enter the key in the **AI Resume Parser** section and
 select **OpenAI API key** mode. Note that some browsers block direct API calls
 due to CORS; if so, use the serverless option.
 
+PDF uploads in OpenAI mode are sent directly to the API for parsing.
+
 ### Vercel (recommended)
 
 1. Create a Vercel project with **Root Directory** set to `vercel/`.
