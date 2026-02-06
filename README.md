@@ -47,6 +47,9 @@ wrangler deploy
 Then set the **AI parser URL** in the app (e.g.,
 `https://cipher-parser.<your-subdomain>.workers.dev`).
 
+Note: If you are using the web app over HTTPS (GitHub Pages), the parser URL
+must also be HTTPS. Browsers block insecure (http) requests from secure pages.
+
 ## What the app does
 
 - Extracts work history, skills, and education from PDF/DOCX resumes

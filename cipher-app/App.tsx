@@ -91,6 +91,15 @@ const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   return new Uint8Array(Buffer.from(base64, 'base64'));
 };
 
+const isHttpsContext = () => {
+  if (Platform.OS !== 'web') return false;
+  if (typeof window === 'undefined') return false;
+  return window.location.protocol === 'https:';
+};
+
+const isLocalUrl = (value: string) =>
+  value.includes('localhost') || value.includes('127.0.0.1');
+
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
@@ -325,6 +334,14 @@ export default function App() {
       }
       return;
     }
+    if (isHttpsContext() && aiBaseUrl.startsWith('http://') && !isLocalUrl(aiBaseUrl)) {
+      if (!isAuto) {
+        setAiStatus(
+          'AI parser URL must be https when the app is served over https.'
+        );
+      }
+      return;
+    }
 
     if (!isAuto) {
       setAiStatus('Parsing resume with serverless AI...');
@@ -343,11 +360,15 @@ export default function App() {
       }
     } catch (error) {
       if (!isAuto) {
-        setAiStatus(
-          error instanceof Error
-            ? `AI parsing failed: ${error.message}`
-            : 'AI parsing failed. Try again.'
-        );
+        const message =
+          error instanceof Error ? error.message : 'AI parsing failed. Try again.';
+        if (message.includes('Failed to fetch')) {
+          setAiStatus(
+            'AI parsing failed: Failed to fetch. Check the AI parser URL, HTTPS, and CORS.'
+          );
+        } else {
+          setAiStatus(`AI parsing failed: ${message}`);
+        }
       }
     }
   };
@@ -456,6 +477,10 @@ export default function App() {
             onChangeText={setAiBaseUrl}
             placeholder="https://your-worker.workers.dev"
           />
+          <Text style={styles.helper}>
+            Tip: If the app is served over https (GitHub Pages), the parser URL must
+            be https as well. http URLs will be blocked.
+          </Text>
           <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
             <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>
           </Pressable>
