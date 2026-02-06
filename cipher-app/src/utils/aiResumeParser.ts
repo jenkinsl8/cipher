@@ -48,12 +48,10 @@ export const normalizeAiResumePayload = (payload: AiResumePayload): ResumeExtrac
 };
 
 export const parseResumeWithAI = async ({
-  apiKey,
   model,
   resumeText,
-  baseUrl = 'https://api.openai.com/v1',
+  baseUrl = 'http://localhost:11434',
 }: {
-  apiKey: string;
   model: string;
   resumeText: string;
   baseUrl?: string;
@@ -67,16 +65,16 @@ export const parseResumeWithAI = async ({
     };
   }
 
-  const response = await fetch(`${baseUrl}/chat/completions`, {
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
     method: 'POST',
     headers: {
-      Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model,
       temperature: 0,
-      response_format: { type: 'json_object' },
+      stream: false,
+      format: 'json',
       messages: [
         {
           role: 'system',
@@ -119,7 +117,7 @@ ${resumeText}`,
   }
 
   const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
+  const content = data.message?.content || data.response || '';
   if (!content) {
     throw new Error('AI parser returned empty response.');
   }

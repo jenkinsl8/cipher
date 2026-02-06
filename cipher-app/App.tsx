@@ -99,12 +99,13 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
-  const [aiApiKey, setAiApiKey] = useState('');
-  const [aiModel, setAiModel] = useState('gpt-4o');
-  const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com/v1');
+  const [aiModel, setAiModel] = useState('llama3.1');
+  const [aiBaseUrl, setAiBaseUrl] = useState('http://localhost:11434');
   const [aiStatus, setAiStatus] = useState('');
   const [aiResumeExtraction, setAiResumeExtraction] = useState<ResumeExtraction | null>(null);
   const [useAiParser, setUseAiParser] = useState(false);
+  const [autoParseEnabled, setAutoParseEnabled] = useState(true);
+  const [lastAutoParsed, setLastAutoParsed] = useState('');
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
@@ -142,6 +143,7 @@ export default function App() {
     setAiResumeExtraction(null);
     setAiStatus('');
     setUseAiParser(false);
+    setLastAutoParsed('');
   }, [resumeText]);
 
   const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
@@ -298,31 +300,48 @@ export default function App() {
     }
   };
 
-  const handleAiResumeParse = async () => {
+  useEffect(() => {
+    if (!autoParseEnabled) return;
+    const text = resumeText.trim();
+    if (text.length < 80) return;
+    if (text === lastAutoParsed) return;
+    const timer = setTimeout(() => {
+      handleAiResumeParse(true);
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [resumeText, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
+
+  const handleAiResumeParse = async (isAuto = false) => {
     if (!resumeText.trim()) {
-      setAiStatus('Add resume text before running the AI parser.');
-      return;
-    }
-    if (!aiApiKey.trim()) {
-      setAiStatus('Add an API key to use the AI parser.');
+      if (!isAuto) {
+        setAiStatus('Add resume text before running the AI parser.');
+      }
       return;
     }
 
-    setAiStatus('Parsing resume with AI...');
+    if (!isAuto) {
+      setAiStatus('Parsing resume with local AI...');
+    }
     try {
       const extraction = await parseResumeWithAI({
-        apiKey: aiApiKey.trim(),
-        model: aiModel.trim() || 'gpt-4o',
-        baseUrl: aiBaseUrl.trim() || 'https://api.openai.com/v1',
+        model: aiModel.trim() || 'llama3.1',
+        baseUrl: aiBaseUrl.trim() || 'http://localhost:11434',
         resumeText,
       });
       setAiResumeExtraction(extraction);
       setUseAiParser(true);
-      setAiStatus('AI parsing complete. Review extracted data.');
+      setLastAutoParsed(resumeText.trim());
+      if (!isAuto) {
+        setAiStatus('AI parsing complete. Review extracted data.');
+      }
     } catch (error) {
-      setAiStatus(
-        error instanceof Error ? error.message : 'AI parsing failed. Try again.'
-      );
+      if (!isAuto) {
+        setAiStatus(
+          error instanceof Error
+            ? `AI parsing failed: ${error.message}`
+            : 'AI parsing failed. Try again.'
+        );
+      }
     }
   };
 
@@ -413,29 +432,26 @@ export default function App() {
           subtitle="Use an AI model to extract structured data from the resume."
         >
           <Text style={styles.helper}>
-            This uses your API key to call an external AI service. Keys stay on device.
+            Runs automatically on upload using a local AI model (no API key).
           </Text>
-          <Field
-            label="API key"
-            value={aiApiKey}
-            onChangeText={setAiApiKey}
-            placeholder="sk-..."
-            secureTextEntry
-          />
+          <Text style={styles.helper}>
+            Requires a local AI server like Ollama. Example: install Ollama and run
+            "ollama run llama3.1".
+          </Text>
           <Field
             label="Model"
             value={aiModel}
             onChangeText={setAiModel}
-            placeholder="gpt-4o"
+            placeholder="llama3.1"
           />
           <Field
             label="API base URL"
             value={aiBaseUrl}
             onChangeText={setAiBaseUrl}
-            placeholder="https://api.openai.com/v1"
+            placeholder="http://localhost:11434"
           />
-          <Pressable style={styles.primaryButton} onPress={handleAiResumeParse}>
-            <Text style={styles.primaryButtonText}>Run AI Parser</Text>
+          <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
+            <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>
           </Pressable>
           {aiStatus ? <Text style={styles.helper}>{aiStatus}</Text> : null}
           {aiResumeExtraction ? (
@@ -445,6 +461,11 @@ export default function App() {
               onValueChange={setUseAiParser}
             />
           ) : null}
+          <ToggleRow
+            label="Auto-parse on upload"
+            value={autoParseEnabled}
+            onValueChange={setAutoParseEnabled}
+          />
         </Section>
 
         <Section
