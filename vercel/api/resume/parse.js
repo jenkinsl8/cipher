@@ -214,7 +214,10 @@ module.exports = async (req, res) => {
 
   const fileExtraction = await extractTextFromFile(file);
   const warnings = [...fileExtraction.warnings];
-  const finalText = resumeText && resumeText.length >= 80 ? resumeText : fileExtraction.text;
+  if (resumeText && resumeText.length < 80) {
+    warnings.push('Resume text is short; extraction accuracy may be reduced.');
+  }
+  const finalText = resumeText || fileExtraction.text;
 
   if (!finalText) {
     res.status(400).json({
