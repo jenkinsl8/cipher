@@ -236,7 +236,6 @@ ${resumeText}`;
                 type: 'input_file',
                 file_data: file.data,
                 filename: file.name,
-                mime_type: file.mimeType,
               },
             ],
           },
