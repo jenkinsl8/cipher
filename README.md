@@ -13,6 +13,7 @@ career path, and market-aware guidance.
 
 ```bash
 cd cipher-app
+nvm use 20 # or any Node 18.18+ / 20+
 npm install
 npm run web     # web app
 npm run android # Android emulator or device
