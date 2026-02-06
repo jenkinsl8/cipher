@@ -29,6 +29,9 @@ workflow completes, the app is available at:
 https://jenkinsl8.github.io/cipher/
 ```
 
+Note: The web output is set to "single" to avoid expo-router requirements for
+local development and Pages hosting.
+
 ## What the app does
 
 - Collects work history, skills, demographics, and goals
