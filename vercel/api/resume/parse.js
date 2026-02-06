@@ -272,7 +272,7 @@ module.exports = async (req, res) => {
           },
           { role: 'user', content: prompt },
         ],
-        response_format: { type: 'json_schema', json_schema: jsonSchema },
+        text: { format: { type: 'json_schema', json_schema: jsonSchema } },
       }),
     });
 

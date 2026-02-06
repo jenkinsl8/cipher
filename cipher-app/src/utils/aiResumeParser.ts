@@ -241,7 +241,12 @@ ${resumeText}`;
             ],
           },
         ],
-        response_format: { type: 'json_schema', json_schema: buildJsonSchema() },
+        text: {
+          format: {
+            type: 'json_schema',
+            json_schema: buildJsonSchema(),
+          },
+        },
       }),
     });
 
