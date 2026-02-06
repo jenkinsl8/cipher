@@ -1,6 +1,7 @@
 # Vercel AI Resume Parser (no API key in app)
 
 This serverless endpoint runs on Vercel and keeps your OpenAI key server-side.
+It uses `pdf-parse` for robust PDF extraction.
 
 ## Deploy
 
