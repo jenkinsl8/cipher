@@ -147,6 +147,13 @@ export type ResumeAnalysis = {
   recommendations: string[];
 };
 
+export type ResumeExtraction = {
+  profile: Partial<UserProfile>;
+  skills: SkillInput[];
+  warnings: string[];
+  sections: Record<string, string[]>;
+};
+
 export type CipherReport = {
   marketSnapshot: ReportSection;
   skillsPortfolio: SkillInsight[];

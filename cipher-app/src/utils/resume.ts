@@ -1,0 +1,296 @@
+import { ResumeExtraction, SkillCategory, SkillInput, UserProfile } from '../types';
+
+const HEADING_MAP: { key: string; labels: string[] }[] = [
+  { key: 'summary', labels: ['summary', 'professional summary', 'profile'] },
+  { key: 'experience', labels: ['experience', 'work experience', 'employment', 'work history'] },
+  { key: 'education', labels: ['education', 'academic'] },
+  { key: 'skills', labels: ['skills', 'core competencies', 'expertise'] },
+  { key: 'certifications', labels: ['certifications', 'licenses', 'certifications and licenses'] },
+  { key: 'projects', labels: ['projects', 'portfolio'] },
+  { key: 'volunteer', labels: ['volunteer', 'community'] },
+];
+
+const CATEGORY_KEYWORDS: Record<SkillCategory, string[]> = {
+  technical: [
+    'python',
+    'sql',
+    'javascript',
+    'typescript',
+    'cloud',
+    'aws',
+    'azure',
+    'gcp',
+    'kubernetes',
+    'devops',
+    'automation',
+    'machine learning',
+    'ai',
+    'data engineering',
+  ],
+  'soft/interpersonal': [
+    'communication',
+    'collaboration',
+    'stakeholder',
+    'negotiation',
+    'presentation',
+    'relationship',
+    'customer',
+    'sales',
+    'influence',
+  ],
+  leadership: [
+    'leadership',
+    'strategy',
+    'management',
+    'mentorship',
+    'vision',
+    'roadmap',
+    'executive',
+  ],
+  analytical: ['analysis', 'analytics', 'data', 'research', 'modeling', 'forecasting'],
+  creative: ['design', 'ux', 'ui', 'copywriting', 'content', 'brand', 'creative'],
+  'domain-specific': [
+    'finance',
+    'fintech',
+    'healthcare',
+    'legal',
+    'compliance',
+    'security',
+    'hr',
+    'operations',
+    'product',
+    'marketing',
+  ],
+};
+
+const INDUSTRY_KEYWORDS: { industry: string; keywords: string[] }[] = [
+  { industry: 'Fintech', keywords: ['fintech', 'bank', 'payments', 'lending', 'finance'] },
+  { industry: 'Healthcare', keywords: ['healthcare', 'clinical', 'hospital', 'medical'] },
+  { industry: 'SaaS', keywords: ['saas', 'software', 'subscription'] },
+  { industry: 'E-commerce', keywords: ['e-commerce', 'ecommerce', 'retail'] },
+  { industry: 'Education', keywords: ['education', 'edtech', 'learning'] },
+  { industry: 'Cybersecurity', keywords: ['security', 'cyber', 'risk', 'compliance'] },
+  { industry: 'Marketing', keywords: ['marketing', 'growth', 'brand', 'content'] },
+  { industry: 'Logistics', keywords: ['logistics', 'supply chain', 'operations'] },
+];
+
+const SKILL_KEYWORDS = [
+  'project management',
+  'program management',
+  'product management',
+  'strategic planning',
+  'data analysis',
+  'analytics',
+  'sql',
+  'python',
+  'excel',
+  'communication',
+  'leadership',
+  'stakeholder management',
+  'customer success',
+  'sales',
+  'marketing',
+  'design',
+  'ux',
+  'research',
+  'operations',
+  'finance',
+  'budgeting',
+  'forecasting',
+  'negotiation',
+  'process improvement',
+  'agile',
+  'scrum',
+  'roadmapping',
+  'go-to-market',
+  'user research',
+  'content strategy',
+  'copywriting',
+  'machine learning',
+  'ai',
+  'cloud',
+  'devops',
+  'security',
+  'compliance',
+  'hr',
+  'recruiting',
+];
+
+const normalizeLine = (line: string) => line.trim().replace(/\s+/g, ' ');
+
+const detectHeading = (line: string) => {
+  const cleaned = normalizeLine(line).replace(/:+$/, '').toLowerCase();
+  for (const heading of HEADING_MAP) {
+    if (heading.labels.some((label) => cleaned === label)) {
+      return heading.key;
+    }
+  }
+  return null;
+};
+
+const extractName = (lines: string[]) => {
+  const topLines = lines.slice(0, 6);
+  return (
+    topLines.find((line) => {
+      const trimmed = normalizeLine(line);
+      if (!trimmed) return false;
+      if (trimmed.includes('@')) return false;
+      if (/\d{3,}/.test(trimmed)) return false;
+      if (trimmed.toLowerCase().includes('resume')) return false;
+      return trimmed.split(' ').length <= 5;
+    }) || ''
+  );
+};
+
+const extractLocation = (lines: string[]) => {
+  const text = lines.slice(0, 6).join(' ');
+  const match = text.match(/([A-Za-z .'-]+,\s?[A-Z]{2})/);
+  return match ? match[1].trim() : '';
+};
+
+const extractRoleFromLine = (line: string) => {
+  const cleaned = normalizeLine(line);
+  const withoutDates = cleaned.replace(/\(.*?\d{4}.*?\)/g, '').trim();
+  const splitters = ['|', ' - ', ' at ', ',', '@'];
+  for (const splitter of splitters) {
+    if (withoutDates.includes(splitter)) {
+      return withoutDates.split(splitter)[0].trim();
+    }
+  }
+  return withoutDates;
+};
+
+const extractYearsExperience = (text: string) => {
+  const yearMatches = text.match(/\b(19|20)\d{2}\b/g) || [];
+  const years = yearMatches.map((value) => Number(value)).filter((value) => value > 1900);
+  if (years.length === 0) return '';
+  const earliest = Math.min(...years);
+  const currentYear = new Date().getFullYear();
+  const diff = Math.max(0, currentYear - earliest);
+  return diff ? String(diff) : '';
+};
+
+const parseSkillsFromLines = (lines: string[]) => {
+  const raw = lines.flatMap((line) =>
+    normalizeLine(line)
+      .replace(/^[-*]\s*/, '')
+      .split(/[,|;/]/)
+      .map((item) => item.trim())
+  );
+  return raw.filter((item) => item.length > 1);
+};
+
+const toTitleCase = (value: string) =>
+  value
+    .split(' ')
+    .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
+    .join(' ');
+
+const categorizeSkill = (name: string): SkillCategory => {
+  const lower = name.toLowerCase();
+  let bestCategory: SkillCategory = 'domain-specific';
+  let bestScore = 0;
+
+  (Object.keys(CATEGORY_KEYWORDS) as SkillCategory[]).forEach((category) => {
+    const score = CATEGORY_KEYWORDS[category].filter((keyword) => lower.includes(keyword))
+      .length;
+    if (score > bestScore) {
+      bestScore = score;
+      bestCategory = category;
+    }
+  });
+
+  return bestCategory;
+};
+
+const buildSkillInputs = (skills: string[]): SkillInput[] =>
+  skills.map((skill, index) => ({
+    id: `resume-${index}-${skill.toLowerCase().replace(/\s+/g, '-')}`,
+    name: toTitleCase(skill),
+    category: categorizeSkill(skill),
+    years: 1,
+    evidence: '',
+    enjoyment: 3,
+  }));
+
+const extractIndustries = (text: string) => {
+  const lower = text.toLowerCase();
+  const matches = INDUSTRY_KEYWORDS.filter((entry) =>
+    entry.keywords.some((keyword) => lower.includes(keyword))
+  ).map((entry) => entry.industry);
+
+  return Array.from(new Set(matches));
+};
+
+export const parseResume = (text: string): ResumeExtraction => {
+  const trimmed = text.trim();
+  if (!trimmed) {
+    return { profile: {}, skills: [], warnings: ['Resume text is empty.'], sections: {} };
+  }
+
+  const lines = trimmed.split(/\r?\n/).map((line) => line.trim());
+  const sections: Record<string, string[]> = {};
+  let currentSection: string | null = null;
+
+  lines.forEach((line) => {
+    if (!line) return;
+    const heading = detectHeading(line);
+    if (heading) {
+      currentSection = heading;
+      if (!sections[currentSection]) sections[currentSection] = [];
+      return;
+    }
+    if (currentSection) {
+      sections[currentSection].push(line);
+    }
+  });
+
+  const profile: Partial<UserProfile> = {};
+  const name = extractName(lines);
+  if (name) profile.name = name;
+
+  const location = extractLocation(lines);
+  if (location) profile.location = location;
+
+  const experienceLines = sections.experience || [];
+  const roleLine = experienceLines.find((line) => line && !/^[-*]/.test(line)) || '';
+  const currentRole = roleLine ? extractRoleFromLine(roleLine) : '';
+  if (currentRole) profile.currentRole = currentRole;
+
+  const yearsExperience = extractYearsExperience(experienceLines.join(' '));
+  if (yearsExperience) profile.yearsExperience = yearsExperience;
+
+  const education = sections.education ? sections.education.slice(0, 2).join(' | ') : '';
+  if (education) profile.education = education;
+
+  const certifications = sections.certifications
+    ? sections.certifications.slice(0, 3).join(' | ')
+    : '';
+  if (certifications) profile.certifications = certifications;
+
+  const industries = extractIndustries(trimmed);
+  if (industries.length) profile.industries = industries.join(', ');
+
+  const skillLines = sections.skills || [];
+  const skillTokens = parseSkillsFromLines(skillLines);
+  let extractedSkills = Array.from(new Set(skillTokens.map((skill) => skill.toLowerCase())));
+
+  if (extractedSkills.length === 0) {
+    const lowerText = trimmed.toLowerCase();
+    extractedSkills = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
+  }
+
+  const skills = buildSkillInputs(extractedSkills);
+  const warnings: string[] = [];
+
+  if (!currentRole) warnings.push('Could not detect current role from resume.');
+  if (!education) warnings.push('Could not detect education section from resume.');
+  if (!skills.length) warnings.push('No skills detected. Ensure your resume lists skills.');
+
+  return {
+    profile,
+    skills,
+    warnings,
+    sections,
+  };
+};

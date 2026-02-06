@@ -14,16 +14,14 @@ import {
   View,
 } from 'react-native';
 
-import { SKILL_CATEGORIES } from './src/data/constants';
 import { generateCipherReport } from './src/engine/cipherEngine';
 import { parseLinkedInConnections } from './src/utils/csv';
+import { parseResume } from './src/utils/resume';
 import {
   AILiteracy,
   CareerGoal,
   MarketSnapshot,
   RiskTolerance,
-  SkillCategory,
-  SkillInput,
   UserProfile,
 } from './src/types';
 
@@ -66,12 +64,6 @@ const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
-  const [skills, setSkills] = useState<SkillInput[]>([]);
-  const [skillName, setSkillName] = useState('');
-  const [skillCategory, setSkillCategory] = useState<SkillCategory>('technical');
-  const [skillYears, setSkillYears] = useState('');
-  const [skillEvidence, setSkillEvidence] = useState('');
-  const [skillEnjoyment, setSkillEnjoyment] = useState('3');
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
   const [resumeText, setResumeText] = useState('');
@@ -82,21 +74,28 @@ export default function App() {
     () => parseLinkedInConnections(linkedInCsv),
     [linkedInCsv]
   );
+  const resumeExtraction = useMemo(() => parseResume(resumeText), [resumeText]);
+  const resumeSkills = resumeExtraction.skills;
+  const mergedProfile = useMemo(
+    () => ({ ...resumeExtraction.profile, ...profile }),
+    [profile, resumeExtraction.profile]
+  );
   const report = useMemo(
-    () => generateCipherReport(profile, skills, market, connections, resumeText),
-    [profile, skills, market, connections, resumeText]
+    () => generateCipherReport(mergedProfile, resumeSkills, market, connections, resumeText),
+    [mergedProfile, resumeSkills, market, connections, resumeText]
   );
 
   const missingFields = useMemo(() => {
     const missing: string[] = [];
-    if (!profile.currentRole.trim()) missing.push('Current role');
-    if (!profile.location.trim()) missing.push('Location');
+    if (!resumeText.trim()) missing.push('Resume upload');
+    if (!mergedProfile.currentRole?.trim()) missing.push('Current role in resume');
+    if (!mergedProfile.location?.trim()) missing.push('Location');
     if (!profile.age.trim()) missing.push('Age');
     if (!profile.gender.trim()) missing.push('Gender');
     if (!profile.raceEthnicity.trim()) missing.push('Race/ethnicity');
-    if (skills.length === 0) missing.push('At least one skill');
+    if (resumeSkills.length === 0) missing.push('Skills in resume');
     return missing;
-  }, [profile, skills]);
+  }, [profile, mergedProfile, resumeSkills, resumeText]);
 
   const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
@@ -115,28 +114,6 @@ export default function App() {
     }));
   };
 
-  const addSkill = () => {
-    if (!skillName.trim()) return;
-    const years = Number(skillYears) || 0;
-    const enjoyment = Number(skillEnjoyment) || 3;
-    const newSkill: SkillInput = {
-      id: `${Date.now()}-${Math.round(Math.random() * 1000)}`,
-      name: skillName.trim(),
-      category: skillCategory,
-      years,
-      evidence: skillEvidence.trim(),
-      enjoyment: Math.max(1, Math.min(5, enjoyment)),
-    };
-    setSkills((prev) => [newSkill, ...prev]);
-    setSkillName('');
-    setSkillYears('');
-    setSkillEvidence('');
-    setSkillEnjoyment('3');
-  };
-
-  const removeSkill = (id: string) => {
-    setSkills((prev) => prev.filter((skill) => skill.id !== id));
-  };
 
   const handleLinkedInPick = async () => {
     setLinkedInStatus('');
@@ -209,12 +186,12 @@ export default function App() {
     {
       name: 'Aegis',
       role: 'AI impact',
-      status: skills.length ? 'Ready' : 'Waiting for skills',
+      status: resumeSkills.length ? 'Ready' : 'Waiting for skills',
     },
     {
       name: 'Atlas',
       role: 'Career paths',
-      status: profile.currentRole ? 'Ready' : 'Waiting for role',
+      status: mergedProfile.currentRole ? 'Ready' : 'Waiting for role',
     },
     {
       name: 'Nexus',
@@ -245,48 +222,63 @@ export default function App() {
         </Section>
 
         <Section
-          title="Core Assessment"
-          subtitle="Tell Cipher about your work history and goals."
+          title="Resume Intake"
+          subtitle="Upload your resume so Cipher can extract roles, education, and skills."
         >
+          <Text style={styles.helper}>
+            Cipher uses your resume to populate role, experience, education, and skills.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
+            <Text style={styles.secondaryButtonText}>
+              {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
+            </Text>
+          </Pressable>
+          {resumeFileName ? (
+            <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
+          ) : null}
+          {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
           <Field
-            label="Name"
-            value={profile.name}
-            onChangeText={(value) => updateProfile('name', value)}
-            placeholder="Your name"
+            label="Or paste resume text here"
+            value={resumeText}
+            onChangeText={setResumeText}
+            placeholder="Paste resume text for extraction and ATS scan"
+            multiline
           />
-          <Field
-            label="Current or recent role"
-            value={profile.currentRole}
-            onChangeText={(value) => updateProfile('currentRole', value)}
-            placeholder="e.g., Product Manager"
-          />
-          <Field
+          {resumeExtraction.warnings.length ? (
+            resumeExtraction.warnings.map((warning) => (
+              <Text key={warning} style={styles.missingText}>
+                - {warning}
+              </Text>
+            ))
+          ) : null}
+        </Section>
+
+        <Section
+          title="Extracted Profile"
+          subtitle="Auto-filled from your resume (review for accuracy)."
+        >
+          <InfoRow label="Name" value={mergedProfile.name || 'Not detected'} />
+          <InfoRow label="Current role" value={mergedProfile.currentRole || 'Not detected'} />
+          <InfoRow
             label="Years of experience"
-            value={profile.yearsExperience}
-            onChangeText={(value) => updateProfile('yearsExperience', value)}
-            placeholder="e.g., 6"
+            value={mergedProfile.yearsExperience || 'Not detected'}
           />
-          <Field
-            label="Education"
-            value={profile.education}
-            onChangeText={(value) => updateProfile('education', value)}
-            placeholder="Degrees, schools, or training"
-          />
-          <Field
+          <InfoRow label="Education" value={mergedProfile.education || 'Not detected'} />
+          <InfoRow
             label="Certifications"
-            value={profile.certifications}
-            onChangeText={(value) => updateProfile('certifications', value)}
-            placeholder="Relevant certifications"
+            value={mergedProfile.certifications || 'Not detected'}
           />
-          <Field
-            label="Industry focus"
-            value={profile.industries}
-            onChangeText={(value) => updateProfile('industries', value)}
-            placeholder="Industries you want to target"
+          <InfoRow label="Industries" value={mergedProfile.industries || 'Not detected'} />
+          <InfoRow
+            label="Location (from resume)"
+            value={resumeExtraction.profile.location || 'Not detected'}
           />
+        </Section>
+
+        <Section title="Location and Mobility" subtitle="Confirm your preferences.">
           <Field
-            label="Location"
-            value={profile.location}
+            label="Location (confirm or update)"
+            value={profile.location || mergedProfile.location || ''}
             onChangeText={(value) => updateProfile('location', value)}
             placeholder="City, region, or time zone"
           />
@@ -395,67 +387,19 @@ export default function App() {
         </Section>
 
         <Section
-          title="Skill Inventory"
-          subtitle="Add skills and evidence so Cipher can rank market value."
+          title="Extracted Skills"
+          subtitle="Cipher pulls skills directly from your resume."
         >
-          <Field
-            label="Skill name"
-            value={skillName}
-            onChangeText={setSkillName}
-            placeholder="e.g., Strategic planning"
-          />
-          <Text style={styles.label}>Skill category</Text>
-          <View style={styles.optionRow}>
-            {SKILL_CATEGORIES.map((category) => (
-              <Chip
-                key={category.value}
-                label={category.label}
-                selected={skillCategory === category.value}
-                onPress={() => setSkillCategory(category.value)}
-              />
-            ))}
-          </View>
-          <Field
-            label="Years of experience"
-            value={skillYears}
-            onChangeText={setSkillYears}
-            placeholder="e.g., 4"
-            keyboardType="numeric"
-          />
-          <Field
-            label="Evidence (project, impact, or story)"
-            value={skillEvidence}
-            onChangeText={setSkillEvidence}
-            placeholder="Describe proof of impact"
-            multiline
-          />
-          <Field
-            label="Enjoyment (1-5)"
-            value={skillEnjoyment}
-            onChangeText={setSkillEnjoyment}
-            placeholder="1-5"
-            keyboardType="numeric"
-          />
-          <Pressable style={styles.primaryButton} onPress={addSkill}>
-            <Text style={styles.primaryButtonText}>Add Skill</Text>
-          </Pressable>
-          {skills.length === 0 ? (
-            <Text style={styles.helper}>No skills added yet.</Text>
+          {resumeSkills.length === 0 ? (
+            <Text style={styles.helper}>
+              No skills detected yet. Ensure your resume includes a Skills section or
+              paste the latest version.
+            </Text>
           ) : (
-            skills.map((skill) => (
+            resumeSkills.map((skill) => (
               <View key={skill.id} style={styles.skillCard}>
-                <View style={styles.skillHeader}>
-                  <Text style={styles.skillName}>{skill.name}</Text>
-                  <Pressable onPress={() => removeSkill(skill.id)}>
-                    <Text style={styles.removeText}>Remove</Text>
-                  </Pressable>
-                </View>
-                <Text style={styles.skillMeta}>
-                  {skill.category} | {skill.years} yrs | enjoyment {skill.enjoyment}/5
-                </Text>
-                {skill.evidence ? (
-                  <Text style={styles.skillEvidence}>{skill.evidence}</Text>
-                ) : null}
+                <Text style={styles.skillName}>{skill.name}</Text>
+                <Text style={styles.skillMeta}>{skill.category}</Text>
               </View>
             ))
           )}
@@ -546,31 +490,6 @@ export default function App() {
           ) : null}
         </Section>
 
-        <Section
-          title="Resume Upload and ATS Scan"
-          subtitle="Upload or paste your resume to analyze ATS readiness."
-        >
-          <Text style={styles.helper}>
-            Cipher performs an ATS scan to gauge resume readability and keyword alignment.
-          </Text>
-          <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
-            <Text style={styles.secondaryButtonText}>
-              {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
-            </Text>
-          </Pressable>
-          {resumeFileName ? (
-            <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
-          ) : null}
-          {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
-          <Field
-            label="Or paste resume text here"
-            value={resumeText}
-            onChangeText={setResumeText}
-            placeholder="Paste resume text for ATS scan"
-            multiline
-          />
-        </Section>
-
         {missingFields.length ? (
           <Section
             title="Missing Required Inputs"
@@ -622,7 +541,9 @@ export default function App() {
               </View>
             ))
           ) : (
-            <Text style={styles.helper}>Add skills to generate a portfolio.</Text>
+            <Text style={styles.helper}>
+              Upload your resume to generate the skills portfolio.
+            </Text>
           )}
 
           <Text style={styles.sectionTitle}>Career Path Options</Text>
@@ -909,6 +830,13 @@ const ToggleRow = ({
   </View>
 );
 
+const InfoRow = ({ label, value }: { label: string; value: string }) => (
+  <View style={styles.infoRow}>
+    <Text style={styles.infoLabel}>{label}</Text>
+    <Text style={styles.infoValue}>{value}</Text>
+  </View>
+);
+
 const Chip = ({
   label,
   selected,
@@ -1014,6 +942,17 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     marginBottom: 8,
   },
+  infoRow: {
+    marginBottom: 10,
+  },
+  infoLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  infoValue: {
+    color: colors.text,
+    marginTop: 2,
+  },
   optionRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1035,17 +974,6 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   chipTextSelected: {
-    color: '#fff',
-    fontWeight: '600',
-  },
-  primaryButton: {
-    backgroundColor: colors.accentStrong,
-    paddingVertical: 10,
-    borderRadius: 10,
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  primaryButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
@@ -1076,25 +1004,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  skillHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
   skillName: {
     color: colors.text,
     fontWeight: '600',
   },
-  removeText: {
-    color: colors.danger,
-  },
   skillMeta: {
     color: colors.muted,
     marginTop: 4,
-  },
-  skillEvidence: {
-    color: colors.text,
-    marginTop: 6,
   },
   agentGrid: {
     flexDirection: 'row',

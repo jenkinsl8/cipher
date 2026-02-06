@@ -34,7 +34,8 @@ local development and Pages hosting.
 
 ## What the app does
 
-- Collects work history, skills, demographics, and goals
+- Extracts work history, skills, and education from resumes
+- Collects demographics and goals for personalization
 - Builds a skills portfolio with AI impact analysis per skill
 - Produces AI-forward opportunities and learning roadmaps
 - Supports LinkedIn Connections CSV upload for network analysis
