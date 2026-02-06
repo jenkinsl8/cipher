@@ -55,6 +55,60 @@ const parseJsonSafely = (value: string) => {
   }
 };
 
+const extractJsonFromText = (value: string) => {
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const direct = parseJsonSafely(trimmed);
+  if (direct) return direct;
+  const first = trimmed.indexOf('{');
+  const last = trimmed.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    return parseJsonSafely(trimmed.slice(first, last + 1));
+  }
+  return null;
+};
+
+const buildJsonSchema = () => ({
+  name: 'resume_parse',
+  schema: {
+    type: 'object',
+    additionalProperties: false,
+    properties: {
+      profile: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          name: { type: 'string' },
+          currentRole: { type: 'string' },
+          yearsExperience: { type: 'string' },
+          education: { type: 'string' },
+          certifications: { type: 'string' },
+          industries: { type: 'string' },
+          location: { type: 'string' },
+        },
+        required: [
+          'name',
+          'currentRole',
+          'yearsExperience',
+          'education',
+          'certifications',
+          'industries',
+          'location',
+        ],
+      },
+      skills: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+      warnings: {
+        type: 'array',
+        items: { type: 'string' },
+      },
+    },
+    required: ['profile', 'skills', 'warnings'],
+  },
+});
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const origin = request.headers.get('Origin');
@@ -85,59 +139,101 @@ export default {
     }
 
     const baseUrl = (env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/$/, '');
-    const response = await fetch(`${baseUrl}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.OPENAI_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model,
-        temperature: 0,
-        response_format: { type: 'json_object' },
-        messages: [
-          {
-            role: 'system',
-            content:
-              'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
-          },
-          {
-            role: 'user',
-            content: buildPrompt(resumeText),
-          },
-        ],
-      }),
-    });
+    const headers = {
+      Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+      'Content-Type': 'application/json',
+    };
+    const prompt = buildPrompt(resumeText);
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      return new Response(
-        JSON.stringify({
-          profile: {},
-          skills: [],
-          warnings: [`AI request failed (${response.status}).`],
-          error: errorText,
+    const tryResponses = async () => {
+      const response = await fetch(`${baseUrl}/v1/responses`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          input: [
+            {
+              role: 'system',
+              content:
+                'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+          response_format: {
+            type: 'json_schema',
+            json_schema: buildJsonSchema(),
+          },
         }),
-        { status: 502, headers: { ...cors, 'Content-Type': 'application/json' } }
-      );
-    }
+      });
 
-    const data = await response.json();
-    const content = data.choices?.[0]?.message?.content || '';
-    const parsed = parseJsonSafely(content);
+      const rawText = await response.text();
+      if (!response.ok) {
+        return { parsed: null, error: rawText, status: response.status };
+      }
 
-    if (!parsed) {
+      const data = parseJsonSafely(rawText);
+      const outputText =
+        data?.output?.[0]?.content?.find((item: { type?: string }) => item.type === 'output_text')
+          ?.text ||
+        data?.output_text ||
+        data?.output?.[0]?.content?.[0]?.text ||
+        '';
+
+      return { parsed: extractJsonFromText(outputText), error: null, status: response.status };
+    };
+
+    const tryChat = async () => {
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          model,
+          temperature: 0,
+          response_format: { type: 'json_object' },
+          messages: [
+            {
+              role: 'system',
+              content:
+                'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
+            },
+            {
+              role: 'user',
+              content: prompt,
+            },
+          ],
+        }),
+      });
+
+      const rawText = await response.text();
+      if (!response.ok) {
+        return { parsed: null, error: rawText, status: response.status };
+      }
+
+      const data = parseJsonSafely(rawText);
+      const outputText = data?.choices?.[0]?.message?.content || '';
+      return { parsed: extractJsonFromText(outputText), error: null, status: response.status };
+    };
+
+    const primary = await tryResponses();
+    const fallbackNeeded = !primary.parsed && [400, 404].includes(primary.status || 0);
+    const fallback = fallbackNeeded ? await tryChat() : primary;
+
+    if (!fallback.parsed) {
       return new Response(
         JSON.stringify({
           profile: {},
           skills: [],
           warnings: ['AI returned invalid JSON.'],
+          error: fallback.error,
         }),
         { status: 502, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
 
-    return new Response(JSON.stringify(parsed), {
+    return new Response(JSON.stringify(fallback.parsed), {
       status: 200,
       headers: { ...cors, 'Content-Type': 'application/json' },
     });

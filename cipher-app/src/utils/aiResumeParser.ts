@@ -84,6 +84,16 @@ export const parseResumeWithAI = async ({
     throw new Error(`AI parser failed (${response.status}): ${errorText}`);
   }
 
-  const data = await response.json();
-  return normalizeAiResumePayload(data as AiResumePayload);
+  const rawText = await response.text();
+  const parsed = normalizeAiResumePayload(
+    (() => {
+      try {
+        return JSON.parse(rawText);
+      } catch (error) {
+        throw new Error(`Parser response was not valid JSON: ${rawText.slice(0, 200)}`);
+      }
+    })()
+  );
+
+  return parsed;
 };
