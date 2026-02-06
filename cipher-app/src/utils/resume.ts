@@ -295,7 +295,7 @@ const categorizeSkill = (name: string): SkillCategory => {
   return bestCategory;
 };
 
-const buildSkillInputs = (skills: string[]): SkillInput[] =>
+export const buildSkillInputsFromNames = (skills: string[]): SkillInput[] =>
   skills.map((skill, index) => ({
     id: `resume-${index}-${skill.toLowerCase().replace(/\s+/g, '-')}`,
     name: toTitleCase(skill),
@@ -372,7 +372,7 @@ export const parseResume = (text: string): ResumeExtraction => {
     extractedSkills = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
   }
 
-  const skills = buildSkillInputs(extractedSkills);
+  const skills = buildSkillInputsFromNames(extractedSkills);
   const warnings: string[] = [];
 
   if (!currentRole) warnings.push('Could not detect current role from resume.');

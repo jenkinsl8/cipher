@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
 import {
   Platform,
@@ -23,12 +23,14 @@ import {
   extractTextFromPdfBinary,
   parseResume,
 } from './src/utils/resume';
+import { parseResumeWithAI } from './src/utils/aiResumeParser';
 import {
   AILiteracy,
   CareerGoal,
   MarketSnapshot,
   RiskTolerance,
   UserProfile,
+  ResumeExtraction,
 } from './src/types';
 
 const initialProfile: UserProfile = {
@@ -97,12 +99,23 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiModel, setAiModel] = useState('gpt-4o');
+  const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com/v1');
+  const [aiStatus, setAiStatus] = useState('');
+  const [aiResumeExtraction, setAiResumeExtraction] = useState<ResumeExtraction | null>(null);
+  const [useAiParser, setUseAiParser] = useState(false);
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
     [linkedInCsv]
   );
-  const resumeExtraction = useMemo(() => parseResume(resumeText), [resumeText]);
+  const resumeExtraction = useMemo(() => {
+    if (useAiParser && aiResumeExtraction) {
+      return aiResumeExtraction;
+    }
+    return parseResume(resumeText);
+  }, [useAiParser, aiResumeExtraction, resumeText]);
   const resumeSkills = resumeExtraction.skills;
   const mergedProfile = useMemo(
     () => ({ ...resumeExtraction.profile, ...profile }),
@@ -124,6 +137,12 @@ export default function App() {
     if (resumeSkills.length === 0) missing.push('Skills in resume');
     return missing;
   }, [profile, mergedProfile, resumeSkills, resumeText]);
+
+  useEffect(() => {
+    setAiResumeExtraction(null);
+    setAiStatus('');
+    setUseAiParser(false);
+  }, [resumeText]);
 
   const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
@@ -279,6 +298,34 @@ export default function App() {
     }
   };
 
+  const handleAiResumeParse = async () => {
+    if (!resumeText.trim()) {
+      setAiStatus('Add resume text before running the AI parser.');
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      setAiStatus('Add an API key to use the AI parser.');
+      return;
+    }
+
+    setAiStatus('Parsing resume with AI...');
+    try {
+      const extraction = await parseResumeWithAI({
+        apiKey: aiApiKey.trim(),
+        model: aiModel.trim() || 'gpt-4o',
+        baseUrl: aiBaseUrl.trim() || 'https://api.openai.com/v1',
+        resumeText,
+      });
+      setAiResumeExtraction(extraction);
+      setUseAiParser(true);
+      setAiStatus('AI parsing complete. Review extracted data.');
+    } catch (error) {
+      setAiStatus(
+        error instanceof Error ? error.message : 'AI parsing failed. Try again.'
+      );
+    }
+  };
+
   const agentStatus = [
     { name: 'Cipher', role: 'Career strategist', status: 'Active' },
     {
@@ -358,6 +405,45 @@ export default function App() {
                 - {warning}
               </Text>
             ))
+          ) : null}
+        </Section>
+
+        <Section
+          title="AI Resume Parser (Recommended)"
+          subtitle="Use an AI model to extract structured data from the resume."
+        >
+          <Text style={styles.helper}>
+            This uses your API key to call an external AI service. Keys stay on device.
+          </Text>
+          <Field
+            label="API key"
+            value={aiApiKey}
+            onChangeText={setAiApiKey}
+            placeholder="sk-..."
+            secureTextEntry
+          />
+          <Field
+            label="Model"
+            value={aiModel}
+            onChangeText={setAiModel}
+            placeholder="gpt-4o"
+          />
+          <Field
+            label="API base URL"
+            value={aiBaseUrl}
+            onChangeText={setAiBaseUrl}
+            placeholder="https://api.openai.com/v1"
+          />
+          <Pressable style={styles.primaryButton} onPress={handleAiResumeParse}>
+            <Text style={styles.primaryButtonText}>Run AI Parser</Text>
+          </Pressable>
+          {aiStatus ? <Text style={styles.helper}>{aiStatus}</Text> : null}
+          {aiResumeExtraction ? (
+            <ToggleRow
+              label="Use AI parsing results"
+              value={useAiParser}
+              onValueChange={setUseAiParser}
+            />
           ) : null}
         </Section>
 
@@ -901,6 +987,7 @@ const Field = ({
   placeholder,
   multiline,
   keyboardType,
+  secureTextEntry,
 }: {
   label: string;
   value: string;
@@ -908,6 +995,7 @@ const Field = ({
   placeholder?: string;
   multiline?: boolean;
   keyboardType?: 'default' | 'numeric';
+  secureTextEntry?: boolean;
 }) => (
   <View style={styles.field}>
     <Text style={styles.label}>{label}</Text>
@@ -919,6 +1007,7 @@ const Field = ({
       style={[styles.input, multiline ? styles.inputMultiline : null]}
       multiline={multiline}
       keyboardType={keyboardType}
+      secureTextEntry={secureTextEntry}
     />
   </View>
 );
@@ -1082,6 +1171,17 @@ const styles = StyleSheet.create({
     color: colors.text,
   },
   chipTextSelected: {
+    color: '#fff',
+    fontWeight: '600',
+  },
+  primaryButton: {
+    backgroundColor: colors.accentStrong,
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  primaryButtonText: {
     color: '#fff',
     fontWeight: '600',
   },
