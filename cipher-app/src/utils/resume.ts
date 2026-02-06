@@ -131,30 +131,45 @@ const decodeXmlEntities = (value: string) =>
 const stripNonPrintable = (value: string) =>
   value.replace(/[^\x09\x0A\x0D\x20-\x7E]+/g, ' ').replace(/\s+/g, ' ').trim();
 
-const loadPdfJs = () => {
-  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf');
-  return pdfjsLib;
+const decodePdfString = (value: string) => {
+  const withEscapes = value
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\b/g, '\b')
+    .replace(/\\f/g, '\f')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\\\/g, '\\');
+
+  return withEscapes.replace(/\\([0-7]{1,3})/g, (match, octal) =>
+    String.fromCharCode(parseInt(octal, 8))
+  );
 };
 
 export const extractTextFromPdfBase64 = async (base64: string): Promise<string> => {
-  const pdfjsLib = loadPdfJs();
-  const data = new Uint8Array(Buffer.from(base64, 'base64'));
-  const loadingTask = pdfjsLib.getDocument({ data, disableWorker: true });
-  const pdf = await loadingTask.promise;
-  const pages: string[] = [];
+  const data = Buffer.from(base64, 'base64').toString('latin1');
+  const parts: string[] = [];
 
-  for (let i = 1; i <= pdf.numPages; i += 1) {
-    const page = await pdf.getPage(i);
-    const content = await page.getTextContent();
-    const strings = content.items
-      .map((item: { str?: string }) => item.str || '')
-      .filter(Boolean);
-    if (strings.length) {
-      pages.push(strings.join(' '));
-    }
+  const tjRegex = /\(([^()]*)\)\s*Tj/g;
+  const tjArrayRegex = /\[(.*?)\]\s*TJ/gs;
+
+  for (const match of data.matchAll(tjRegex)) {
+    const raw = match[1];
+    if (raw) parts.push(decodePdfString(raw));
   }
 
-  return pages.join('\n').trim();
+  for (const match of data.matchAll(tjArrayRegex)) {
+    const arrayContent = match[1];
+    if (!arrayContent) continue;
+    const strings = arrayContent.match(/\(([^()]*)\)/g) || [];
+    strings.forEach((entry) => {
+      const raw = entry.slice(1, -1);
+      if (raw) parts.push(decodePdfString(raw));
+    });
+  }
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
 };
 
 export const extractTextFromDocxBase64 = async (base64: string): Promise<string> => {

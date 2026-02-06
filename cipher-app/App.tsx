@@ -298,6 +298,10 @@ export default function App() {
             Supports PDF, DOCX, DOC, or plain text. Cipher uses your resume to
             populate role, experience, education, and skills.
           </Text>
+          <Text style={styles.helper}>
+            PDF extraction is best-effort for text-based PDFs. If results look off, paste
+            the resume text.
+          </Text>
           <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
             <Text style={styles.secondaryButtonText}>
               {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}

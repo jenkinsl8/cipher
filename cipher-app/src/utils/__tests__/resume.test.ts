@@ -3,6 +3,7 @@ import { Buffer } from 'buffer';
 import {
   extractTextFromDocBase64,
   extractTextFromDocxBase64,
+  extractTextFromPdfBase64,
   parseResume,
 } from '../resume';
 
@@ -74,5 +75,39 @@ describe('resume extraction helpers', () => {
     );
     const text = await extractTextFromDocBase64(base64);
     expect(text).toContain('Resume content for DOC format');
+  });
+
+  it('extracts text from PDF base64 with best-effort parsing', async () => {
+    const pdf = `%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 300 144] /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 44 >>
+stream
+BT
+/F1 12 Tf
+72 72 Td
+(Hello PDF Resume) Tj
+ET
+endstream
+endobj
+xref
+0 5
+0000000000 65535 f
+trailer
+<< /Root 1 0 R /Size 5 >>
+startxref
+999
+%%EOF`;
+    const base64 = Buffer.from(pdf, 'latin1').toString('base64');
+    const text = await extractTextFromPdfBase64(base64);
+    expect(text).toContain('Hello PDF Resume');
   });
 });
