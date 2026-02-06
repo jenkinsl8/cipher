@@ -147,19 +147,25 @@ const decodePdfString = (value: string) => {
   );
 };
 
-export const extractTextFromPdfBase64 = async (base64: string): Promise<string> => {
-  const data = Buffer.from(base64, 'base64').toString('latin1');
+const toUint8Array = (data: Uint8Array | ArrayBuffer) =>
+  data instanceof Uint8Array ? data : new Uint8Array(data);
+
+export const extractTextFromPdfBinary = async (
+  data: Uint8Array | ArrayBuffer
+): Promise<string> => {
+  const buffer = Buffer.from(toUint8Array(data));
+  const content = buffer.toString('latin1');
   const parts: string[] = [];
 
   const tjRegex = /\(([^()]*)\)\s*Tj/g;
   const tjArrayRegex = /\[(.*?)\]\s*TJ/gs;
 
-  for (const match of data.matchAll(tjRegex)) {
+  for (const match of content.matchAll(tjRegex)) {
     const raw = match[1];
     if (raw) parts.push(decodePdfString(raw));
   }
 
-  for (const match of data.matchAll(tjArrayRegex)) {
+  for (const match of content.matchAll(tjArrayRegex)) {
     const arrayContent = match[1];
     if (!arrayContent) continue;
     const strings = arrayContent.match(/\(([^()]*)\)/g) || [];
@@ -172,8 +178,10 @@ export const extractTextFromPdfBase64 = async (base64: string): Promise<string> 
   return parts.join(' ').replace(/\s+/g, ' ').trim();
 };
 
-export const extractTextFromDocxBase64 = async (base64: string): Promise<string> => {
-  const zip = await JSZip.loadAsync(base64, { base64: true });
+export const extractTextFromDocxBinary = async (
+  data: Uint8Array | ArrayBuffer
+): Promise<string> => {
+  const zip = await JSZip.loadAsync(toUint8Array(data));
   const doc = zip.file('word/document.xml');
   if (!doc) return '';
   const xml = await doc.async('string');
@@ -195,8 +203,10 @@ export const extractTextFromDocxBase64 = async (base64: string): Promise<string>
   return extracted.join('\n').trim();
 };
 
-export const extractTextFromDocBase64 = async (base64: string): Promise<string> => {
-  const buffer = Buffer.from(base64, 'base64');
+export const extractTextFromDocBinary = async (
+  data: Uint8Array | ArrayBuffer
+): Promise<string> => {
+  const buffer = Buffer.from(toUint8Array(data));
   return stripNonPrintable(buffer.toString('latin1'));
 };
 

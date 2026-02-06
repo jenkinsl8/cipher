@@ -1,9 +1,9 @@
 import JSZip from 'jszip';
 import { Buffer } from 'buffer';
 import {
-  extractTextFromDocBase64,
-  extractTextFromDocxBase64,
-  extractTextFromPdfBase64,
+  extractTextFromDocBinary,
+  extractTextFromDocxBinary,
+  extractTextFromPdfBinary,
   parseResume,
 } from '../resume';
 
@@ -51,7 +51,7 @@ Program Manager - Growth Team (2017-2023)
 });
 
 describe('resume extraction helpers', () => {
-  it('extracts text from DOCX base64', async () => {
+  it('extracts text from DOCX binary', async () => {
     const zip = new JSZip();
     zip.file(
       'word/document.xml',
@@ -63,21 +63,21 @@ describe('resume extraction helpers', () => {
         </w:body>
       </w:document>`
     );
-    const base64 = await zip.generateAsync({ type: 'base64' });
-    const text = await extractTextFromDocxBase64(base64);
+    const binary = await zip.generateAsync({ type: 'uint8array' });
+    const text = await extractTextFromDocxBinary(binary);
     expect(text).toContain('Product Manager');
     expect(text).toContain('Data Analysis');
   });
 
-  it('extracts text from DOC base64 with best-effort parsing', async () => {
-    const base64 = Buffer.from('Resume content for DOC format', 'latin1').toString(
-      'base64'
+  it('extracts text from DOC binary with best-effort parsing', async () => {
+    const binary = new Uint8Array(
+      Buffer.from('Resume content for DOC format', 'latin1')
     );
-    const text = await extractTextFromDocBase64(base64);
+    const text = await extractTextFromDocBinary(binary);
     expect(text).toContain('Resume content for DOC format');
   });
 
-  it('extracts text from PDF base64 with best-effort parsing', async () => {
+  it('extracts text from PDF binary with best-effort parsing', async () => {
     const pdf = `%PDF-1.4
 1 0 obj
 << /Type /Catalog /Pages 2 0 R >>
@@ -106,8 +106,8 @@ trailer
 startxref
 999
 %%EOF`;
-    const base64 = Buffer.from(pdf, 'latin1').toString('base64');
-    const text = await extractTextFromPdfBase64(base64);
+    const binary = new Uint8Array(Buffer.from(pdf, 'latin1'));
+    const text = await extractTextFromPdfBinary(binary);
     expect(text).toContain('Hello PDF Resume');
   });
 });

@@ -18,9 +18,9 @@ import {
 import { generateCipherReport } from './src/engine/cipherEngine';
 import { parseLinkedInConnections } from './src/utils/csv';
 import {
-  extractTextFromDocBase64,
-  extractTextFromDocxBase64,
-  extractTextFromPdfBase64,
+  extractTextFromDocBinary,
+  extractTextFromDocxBinary,
+  extractTextFromPdfBinary,
   parseResume,
 } from './src/utils/resume';
 import {
@@ -67,25 +67,26 @@ const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
 const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
 const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
 
-const readAssetBase64 = async (asset: DocumentPicker.DocumentPickerAsset) => {
+const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
     const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
     if (assetFile) {
       const arrayBuffer = await assetFile.arrayBuffer();
-      return Buffer.from(arrayBuffer).toString('base64');
+      return new Uint8Array(arrayBuffer);
     }
 
     if (asset.uri) {
       const response = await fetch(asset.uri);
       const blob = await response.blob();
       const arrayBuffer = await blob.arrayBuffer();
-      return Buffer.from(arrayBuffer).toString('base64');
+      return new Uint8Array(arrayBuffer);
     }
   }
 
-  return FileSystem.readAsStringAsync(asset.uri, {
+  const base64 = await FileSystem.readAsStringAsync(asset.uri, {
     encoding: FileSystem.EncodingType.Base64,
   });
+  return new Uint8Array(Buffer.from(base64, 'base64'));
 };
 
 export default function App() {
@@ -184,17 +185,18 @@ export default function App() {
       setResumeFileName(name);
       const lower = name.toLowerCase();
       const extension = lower.split('.').pop() || '';
+      const mimeType = asset.mimeType?.toLowerCase() || '';
       const isPlainText =
         extension === 'txt' || extension === 'md' || extension === 'rtf';
 
-      if (extension === 'pdf') {
+      if (extension === 'pdf' || mimeType === 'application/pdf') {
         try {
-          const base64 = await readAssetBase64(asset);
-          if (!base64) {
+          const binary = await readAssetBinary(asset);
+          if (!binary?.length) {
             setResumeStatus('Could not read PDF data. Paste resume text.');
             return;
           }
-          const content = await extractTextFromPdfBase64(base64);
+          const content = await extractTextFromPdfBinary(binary);
           if (!content) {
             setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
             return;
@@ -210,14 +212,18 @@ export default function App() {
         }
       }
 
-      if (extension === 'docx') {
+      if (
+        extension === 'docx' ||
+        mimeType ===
+          'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+      ) {
         try {
-          const base64 = await readAssetBase64(asset);
-          if (!base64) {
+          const binary = await readAssetBinary(asset);
+          if (!binary?.length) {
             setResumeStatus('Could not read DOCX data. Paste resume text.');
             return;
           }
-          const content = await extractTextFromDocxBase64(base64);
+          const content = await extractTextFromDocxBinary(binary);
           if (!content) {
             setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
             return;
@@ -233,14 +239,14 @@ export default function App() {
         }
       }
 
-      if (extension === 'doc') {
+      if (extension === 'doc' || mimeType === 'application/msword') {
         try {
-          const base64 = await readAssetBase64(asset);
-          if (!base64) {
+          const binary = await readAssetBinary(asset);
+          if (!binary?.length) {
             setResumeStatus('Could not read DOC data. Paste resume text.');
             return;
           }
-          const content = await extractTextFromDocBase64(base64);
+          const content = await extractTextFromDocBinary(binary);
           if (!content) {
             setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
             return;
