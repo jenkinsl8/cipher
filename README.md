@@ -34,7 +34,7 @@ local development and Pages hosting.
 
 ## What the app does
 
-- Extracts work history, skills, and education from resumes
+- Extracts work history, skills, and education from PDF/DOCX resumes
 - Collects demographics and goals for personalization
 - Builds a skills portfolio with AI impact analysis per skill
 - Produces AI-forward opportunities and learning roadmaps

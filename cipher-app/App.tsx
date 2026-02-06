@@ -16,7 +16,12 @@ import {
 
 import { generateCipherReport } from './src/engine/cipherEngine';
 import { parseLinkedInConnections } from './src/utils/csv';
-import { parseResume } from './src/utils/resume';
+import {
+  extractTextFromDocBase64,
+  extractTextFromDocxBase64,
+  extractTextFromPdfBase64,
+  parseResume,
+} from './src/utils/resume';
 import {
   AILiteracy,
   CareerGoal,
@@ -156,12 +161,76 @@ export default function App() {
       const name = asset.name || 'resume';
       setResumeFileName(name);
       const lower = name.toLowerCase();
+      const extension = lower.split('.').pop() || '';
       const isPlainText =
-        lower.endsWith('.txt') || lower.endsWith('.md') || lower.endsWith('.rtf');
+        extension === 'txt' || extension === 'md' || extension === 'rtf';
+
+      if (extension === 'pdf') {
+        try {
+          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const content = await extractTextFromPdfBase64(base64);
+          if (!content) {
+            setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
+            return;
+          }
+          setResumeText(content);
+          setResumeStatus(
+            `Extracted text from PDF (${content.split('\n').length} lines).`
+          );
+          return;
+        } catch (error) {
+          setResumeStatus('PDF extraction failed. Paste resume text instead.');
+          return;
+        }
+      }
+
+      if (extension === 'docx') {
+        try {
+          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const content = await extractTextFromDocxBase64(base64);
+          if (!content) {
+            setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
+            return;
+          }
+          setResumeText(content);
+          setResumeStatus(
+            `Extracted text from DOCX (${content.split('\n').length} lines).`
+          );
+          return;
+        } catch (error) {
+          setResumeStatus('DOCX extraction failed. Paste resume text instead.');
+          return;
+        }
+      }
+
+      if (extension === 'doc') {
+        try {
+          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
+            encoding: FileSystem.EncodingType.Base64,
+          });
+          const content = await extractTextFromDocBase64(base64);
+          if (!content) {
+            setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
+            return;
+          }
+          setResumeText(content);
+          setResumeStatus(
+            'Extracted best-effort text from DOC. Review and paste if needed.'
+          );
+          return;
+        } catch (error) {
+          setResumeStatus('DOC extraction failed. Paste resume text instead.');
+          return;
+        }
+      }
 
       if (!isPlainText) {
         setResumeStatus(
-          'Uploaded. For ATS scan accuracy, paste resume text below (PDF/DOCX parsing not supported).'
+          'Unsupported format. Upload PDF, DOCX, DOC, or paste resume text.'
         );
         return;
       }
@@ -226,7 +295,8 @@ export default function App() {
           subtitle="Upload your resume so Cipher can extract roles, education, and skills."
         >
           <Text style={styles.helper}>
-            Cipher uses your resume to populate role, experience, education, and skills.
+            Supports PDF, DOCX, DOC, or plain text. Cipher uses your resume to
+            populate role, experience, education, and skills.
           </Text>
           <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
             <Text style={styles.secondaryButtonText}>

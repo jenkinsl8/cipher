@@ -1,3 +1,5 @@
+import JSZip from 'jszip';
+import { Buffer } from 'buffer';
 import { ResumeExtraction, SkillCategory, SkillInput, UserProfile } from '../types';
 
 const HEADING_MAP: { key: string; labels: string[] }[] = [
@@ -117,6 +119,71 @@ const SKILL_KEYWORDS = [
 ];
 
 const normalizeLine = (line: string) => line.trim().replace(/\s+/g, ' ');
+
+const decodeXmlEntities = (value: string) =>
+  value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+const stripNonPrintable = (value: string) =>
+  value.replace(/[^\x09\x0A\x0D\x20-\x7E]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+const loadPdfJs = () => {
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf');
+  return pdfjsLib;
+};
+
+export const extractTextFromPdfBase64 = async (base64: string): Promise<string> => {
+  const pdfjsLib = loadPdfJs();
+  const data = new Uint8Array(Buffer.from(base64, 'base64'));
+  const loadingTask = pdfjsLib.getDocument({ data, disableWorker: true });
+  const pdf = await loadingTask.promise;
+  const pages: string[] = [];
+
+  for (let i = 1; i <= pdf.numPages; i += 1) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const strings = content.items
+      .map((item: { str?: string }) => item.str || '')
+      .filter(Boolean);
+    if (strings.length) {
+      pages.push(strings.join(' '));
+    }
+  }
+
+  return pages.join('\n').trim();
+};
+
+export const extractTextFromDocxBase64 = async (base64: string): Promise<string> => {
+  const zip = await JSZip.loadAsync(base64, { base64: true });
+  const doc = zip.file('word/document.xml');
+  if (!doc) return '';
+  const xml = await doc.async('string');
+  const paragraphs = xml.split('</w:p>');
+  const extracted: string[] = [];
+
+  paragraphs.forEach((paragraph) => {
+    const matches = paragraph.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    if (!matches) return;
+    const text = matches
+      .map((match) => match.replace(/<w:t[^>]*>/, '').replace('</w:t>', ''))
+      .map((segment) => decodeXmlEntities(segment))
+      .join(' ');
+    if (text.trim()) {
+      extracted.push(text.trim());
+    }
+  });
+
+  return extracted.join('\n').trim();
+};
+
+export const extractTextFromDocBase64 = async (base64: string): Promise<string> => {
+  const buffer = Buffer.from(base64, 'base64');
+  return stripNonPrintable(buffer.toString('latin1'));
+};
 
 const detectHeading = (line: string) => {
   const cleaned = normalizeLine(line).replace(/:+$/, '').toLowerCase();
