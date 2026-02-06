@@ -2,6 +2,7 @@ import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
 import React, { useMemo, useState } from 'react';
+import { Buffer } from 'buffer';
 import {
   Platform,
   Pressable,
@@ -65,6 +66,27 @@ const initialMarket: MarketSnapshot = {
 const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
 const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
 const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
+
+const readAssetBase64 = async (asset: DocumentPicker.DocumentPickerAsset) => {
+  if (Platform.OS === 'web') {
+    const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
+    if (assetFile) {
+      const arrayBuffer = await assetFile.arrayBuffer();
+      return Buffer.from(arrayBuffer).toString('base64');
+    }
+
+    if (asset.uri) {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      const arrayBuffer = await blob.arrayBuffer();
+      return Buffer.from(arrayBuffer).toString('base64');
+    }
+  }
+
+  return FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+};
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
@@ -167,9 +189,11 @@ export default function App() {
 
       if (extension === 'pdf') {
         try {
-          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          const base64 = await readAssetBase64(asset);
+          if (!base64) {
+            setResumeStatus('Could not read PDF data. Paste resume text.');
+            return;
+          }
           const content = await extractTextFromPdfBase64(base64);
           if (!content) {
             setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
@@ -188,9 +212,11 @@ export default function App() {
 
       if (extension === 'docx') {
         try {
-          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          const base64 = await readAssetBase64(asset);
+          if (!base64) {
+            setResumeStatus('Could not read DOCX data. Paste resume text.');
+            return;
+          }
           const content = await extractTextFromDocxBase64(base64);
           if (!content) {
             setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
@@ -209,9 +235,11 @@ export default function App() {
 
       if (extension === 'doc') {
         try {
-          const base64 = await FileSystem.readAsStringAsync(asset.uri, {
-            encoding: FileSystem.EncodingType.Base64,
-          });
+          const base64 = await readAssetBase64(asset);
+          if (!base64) {
+            setResumeStatus('Could not read DOC data. Paste resume text.');
+            return;
+          }
           const content = await extractTextFromDocBase64(base64);
           if (!content) {
             setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
