@@ -108,6 +108,11 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
+  const [resumeFilePayload, setResumeFilePayload] = useState<{
+    name: string;
+    mimeType: string;
+    data: string;
+  } | null>(null);
   const [aiModel, setAiModel] = useState('gpt-4o');
   const [aiBaseUrl, setAiBaseUrl] = useState('');
   const [aiStatus, setAiStatus] = useState('');
@@ -213,6 +218,8 @@ export default function App() {
 
       const name = asset.name || 'resume';
       setResumeFileName(name);
+      setResumeText('');
+      setResumeFilePayload(null);
       const lower = name.toLowerCase();
       const extension = lower.split('.').pop() || '';
       const mimeType = asset.mimeType?.toLowerCase() || '';
@@ -226,6 +233,11 @@ export default function App() {
             setResumeStatus('Could not read PDF data. Paste resume text.');
             return;
           }
+          setResumeFilePayload({
+            name,
+            mimeType: mimeType || 'application/pdf',
+            data: Buffer.from(binary).toString('base64'),
+          });
           const content = await extractTextFromPdfBinary(binary);
           if (!content) {
             setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
@@ -253,6 +265,13 @@ export default function App() {
             setResumeStatus('Could not read DOCX data. Paste resume text.');
             return;
           }
+          setResumeFilePayload({
+            name,
+            mimeType:
+              mimeType ||
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            data: Buffer.from(binary).toString('base64'),
+          });
           const content = await extractTextFromDocxBinary(binary);
           if (!content) {
             setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
@@ -276,6 +295,11 @@ export default function App() {
             setResumeStatus('Could not read DOC data. Paste resume text.');
             return;
           }
+          setResumeFilePayload({
+            name,
+            mimeType: mimeType || 'application/msword',
+            data: Buffer.from(binary).toString('base64'),
+          });
           const content = await extractTextFromDocBinary(binary);
           if (!content) {
             setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
@@ -302,6 +326,11 @@ export default function App() {
       const content = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
+      setResumeFilePayload({
+        name,
+        mimeType: mimeType || 'text/plain',
+        data: Buffer.from(content, 'utf8').toString('base64'),
+      });
       setResumeText(content);
       setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
     } catch (error) {
@@ -312,17 +341,19 @@ export default function App() {
   useEffect(() => {
     if (!autoParseEnabled) return;
     const text = resumeText.trim();
-    if (text.length < 80) return;
+    const hasText = text.length >= 80;
+    const hasFile = !!resumeFilePayload?.data;
+    if (!hasText && !hasFile) return;
     if (text === lastAutoParsed) return;
     if (!aiBaseUrl.trim()) return;
     const timer = setTimeout(() => {
       handleAiResumeParse(true);
     }, 800);
     return () => clearTimeout(timer);
-  }, [resumeText, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
+  }, [resumeText, resumeFilePayload, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
 
   const handleAiResumeParse = async (isAuto = false) => {
-    if (!resumeText.trim()) {
+    if (!resumeText.trim() && !resumeFilePayload?.data) {
       if (!isAuto) {
         setAiStatus('Add resume text before running the AI parser.');
       }
@@ -351,6 +382,7 @@ export default function App() {
         model: aiModel.trim() || 'gpt-4o',
         baseUrl: aiBaseUrl.trim(),
         resumeText,
+        file: resumeFilePayload || undefined,
       });
       setAiResumeExtraction(extraction);
       setUseAiParser(true);

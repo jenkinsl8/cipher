@@ -51,12 +51,18 @@ export const parseResumeWithAI = async ({
   model,
   resumeText,
   baseUrl,
+  file,
 }: {
   model: string;
   resumeText: string;
   baseUrl: string;
+  file?: {
+    name: string;
+    mimeType: string;
+    data: string;
+  };
 }): Promise<ResumeExtraction> => {
-  if (!resumeText.trim()) {
+  if (!resumeText.trim() && !file?.data) {
     return {
       profile: {},
       skills: [],
@@ -75,6 +81,7 @@ export const parseResumeWithAI = async ({
     body: JSON.stringify({
       model,
       text: resumeText,
+      file,
     }),
   }
   );

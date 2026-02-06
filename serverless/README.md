@@ -46,7 +46,12 @@ Payload:
 ```json
 {
   "text": "resume text",
-  "model": "gpt-4o"
+  "model": "gpt-4o",
+  "file": {
+    "name": "resume.pdf",
+    "mimeType": "application/pdf",
+    "data": "base64-encoded-bytes"
+  }
 }
 ```
 
