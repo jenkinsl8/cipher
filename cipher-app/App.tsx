@@ -91,6 +91,15 @@ const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   return new Uint8Array(Buffer.from(base64, 'base64'));
 };
 
+const isHttpsContext = () => {
+  if (Platform.OS !== 'web') return false;
+  if (typeof window === 'undefined') return false;
+  return window.location.protocol === 'https:';
+};
+
+const isLocalUrl = (value: string) =>
+  value.includes('localhost') || value.includes('127.0.0.1');
+
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
@@ -99,6 +108,11 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
+  const [resumeFilePayload, setResumeFilePayload] = useState<{
+    name: string;
+    mimeType: string;
+    data: string;
+  } | null>(null);
   const [aiModel, setAiModel] = useState('gpt-4o');
   const [aiBaseUrl, setAiBaseUrl] = useState('');
   const [aiStatus, setAiStatus] = useState('');
@@ -204,6 +218,8 @@ export default function App() {
 
       const name = asset.name || 'resume';
       setResumeFileName(name);
+      setResumeText('');
+      setResumeFilePayload(null);
       const lower = name.toLowerCase();
       const extension = lower.split('.').pop() || '';
       const mimeType = asset.mimeType?.toLowerCase() || '';
@@ -217,6 +233,11 @@ export default function App() {
             setResumeStatus('Could not read PDF data. Paste resume text.');
             return;
           }
+          setResumeFilePayload({
+            name,
+            mimeType: mimeType || 'application/pdf',
+            data: Buffer.from(binary).toString('base64'),
+          });
           const content = await extractTextFromPdfBinary(binary);
           if (!content) {
             setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
@@ -244,6 +265,13 @@ export default function App() {
             setResumeStatus('Could not read DOCX data. Paste resume text.');
             return;
           }
+          setResumeFilePayload({
+            name,
+            mimeType:
+              mimeType ||
+              'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            data: Buffer.from(binary).toString('base64'),
+          });
           const content = await extractTextFromDocxBinary(binary);
           if (!content) {
             setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
@@ -267,6 +295,11 @@ export default function App() {
             setResumeStatus('Could not read DOC data. Paste resume text.');
             return;
           }
+          setResumeFilePayload({
+            name,
+            mimeType: mimeType || 'application/msword',
+            data: Buffer.from(binary).toString('base64'),
+          });
           const content = await extractTextFromDocBinary(binary);
           if (!content) {
             setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
@@ -293,6 +326,11 @@ export default function App() {
       const content = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
+      setResumeFilePayload({
+        name,
+        mimeType: mimeType || 'text/plain',
+        data: Buffer.from(content, 'utf8').toString('base64'),
+      });
       setResumeText(content);
       setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
     } catch (error) {
@@ -303,17 +341,19 @@ export default function App() {
   useEffect(() => {
     if (!autoParseEnabled) return;
     const text = resumeText.trim();
-    if (text.length < 80) return;
+    const hasText = text.length >= 80;
+    const hasFile = !!resumeFilePayload?.data;
+    if (!hasText && !hasFile) return;
     if (text === lastAutoParsed) return;
     if (!aiBaseUrl.trim()) return;
     const timer = setTimeout(() => {
       handleAiResumeParse(true);
     }, 800);
     return () => clearTimeout(timer);
-  }, [resumeText, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
+  }, [resumeText, resumeFilePayload, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
 
   const handleAiResumeParse = async (isAuto = false) => {
-    if (!resumeText.trim()) {
+    if (!resumeText.trim() && !resumeFilePayload?.data) {
       if (!isAuto) {
         setAiStatus('Add resume text before running the AI parser.');
       }
@@ -322,6 +362,14 @@ export default function App() {
     if (!aiBaseUrl.trim()) {
       if (!isAuto) {
         setAiStatus('Add the AI parser URL before running.');
+      }
+      return;
+    }
+    if (isHttpsContext() && aiBaseUrl.startsWith('http://') && !isLocalUrl(aiBaseUrl)) {
+      if (!isAuto) {
+        setAiStatus(
+          'AI parser URL must be https when the app is served over https.'
+        );
       }
       return;
     }
@@ -334,6 +382,7 @@ export default function App() {
         model: aiModel.trim() || 'gpt-4o',
         baseUrl: aiBaseUrl.trim(),
         resumeText,
+        file: resumeFilePayload || undefined,
       });
       setAiResumeExtraction(extraction);
       setUseAiParser(true);
@@ -343,11 +392,15 @@ export default function App() {
       }
     } catch (error) {
       if (!isAuto) {
-        setAiStatus(
-          error instanceof Error
-            ? `AI parsing failed: ${error.message}`
-            : 'AI parsing failed. Try again.'
-        );
+        const message =
+          error instanceof Error ? error.message : 'AI parsing failed. Try again.';
+        if (message.includes('Failed to fetch')) {
+          setAiStatus(
+            'AI parsing failed: Failed to fetch. Check the AI parser URL, HTTPS, and CORS.'
+          );
+        } else {
+          setAiStatus(`AI parsing failed: ${message}`);
+        }
       }
     }
   };
@@ -456,6 +509,10 @@ export default function App() {
             onChangeText={setAiBaseUrl}
             placeholder="https://your-worker.workers.dev"
           />
+          <Text style={styles.helper}>
+            Tip: If the app is served over https (GitHub Pages), the parser URL must
+            be https as well. http URLs will be blocked.
+          </Text>
           <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
             <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>
           </Pressable>

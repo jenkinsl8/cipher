@@ -1,3 +1,5 @@
+import JSZip from 'jszip';
+
 export interface Env {
   OPENAI_API_KEY: string;
   OPENAI_BASE_URL?: string;
@@ -46,6 +48,134 @@ Rules:
 
 Resume text:
 ${resumeText}`;
+
+const decodeXmlEntities = (value: string) =>
+  value
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'");
+
+const stripNonPrintable = (value: string) =>
+  value.replace(/[^\x09\x0A\x0D\x20-\x7E]+/g, ' ').replace(/\s+/g, ' ').trim();
+
+const decodePdfString = (value: string) => {
+  const withEscapes = value
+    .replace(/\\n/g, '\n')
+    .replace(/\\r/g, '\r')
+    .replace(/\\t/g, '\t')
+    .replace(/\\b/g, '\b')
+    .replace(/\\f/g, '\f')
+    .replace(/\\\(/g, '(')
+    .replace(/\\\)/g, ')')
+    .replace(/\\\\/g, '\\');
+
+  return withEscapes.replace(/\\([0-7]{1,3})/g, (match, octal) =>
+    String.fromCharCode(parseInt(octal, 8))
+  );
+};
+
+const decodeBase64 = (value: string) => {
+  const binary = atob(value);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i += 1) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+};
+
+const toLatin1String = (bytes: Uint8Array) => {
+  let result = '';
+  const chunkSize = 8192;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    const chunk = bytes.slice(i, i + chunkSize);
+    result += String.fromCharCode(...chunk);
+  }
+  return result;
+};
+
+const extractTextFromPdfBinary = (bytes: Uint8Array) => {
+  const content = toLatin1String(bytes);
+  const parts: string[] = [];
+  const tjRegex = /\(([^()]*)\)\s*Tj/g;
+  const tjArrayRegex = /\[(.*?)\]\s*TJ/gs;
+
+  for (const match of content.matchAll(tjRegex)) {
+    const raw = match[1];
+    if (raw) parts.push(decodePdfString(raw));
+  }
+
+  for (const match of content.matchAll(tjArrayRegex)) {
+    const arrayContent = match[1];
+    if (!arrayContent) continue;
+    const strings = arrayContent.match(/\(([^()]*)\)/g) || [];
+    strings.forEach((entry) => {
+      const raw = entry.slice(1, -1);
+      if (raw) parts.push(decodePdfString(raw));
+    });
+  }
+
+  return parts.join(' ').replace(/\s+/g, ' ').trim();
+};
+
+const extractTextFromDocxBinary = async (bytes: Uint8Array) => {
+  const zip = await JSZip.loadAsync(bytes);
+  const doc = zip.file('word/document.xml');
+  if (!doc) return '';
+  const xml = await doc.async('string');
+  const paragraphs = xml.split('</w:p>');
+  const extracted: string[] = [];
+
+  paragraphs.forEach((paragraph) => {
+    const matches = paragraph.match(/<w:t[^>]*>([^<]*)<\/w:t>/g);
+    if (!matches) return;
+    const text = matches
+      .map((match) => match.replace(/<w:t[^>]*>/, '').replace('</w:t>', ''))
+      .map((segment) => decodeXmlEntities(segment))
+      .join(' ');
+    if (text.trim()) {
+      extracted.push(text.trim());
+    }
+  });
+
+  return extracted.join('\n').trim();
+};
+
+const extractTextFromDocBinary = (bytes: Uint8Array) =>
+  stripNonPrintable(toLatin1String(bytes));
+
+const extractTextFromFile = async (file?: { name?: string; mimeType?: string; data?: string }) => {
+  if (!file?.data) return { text: '', warnings: [] as string[] };
+  const name = (file.name || '').toLowerCase();
+  const extension = name.split('.').pop() || '';
+  const mimeType = (file.mimeType || '').toLowerCase();
+  const bytes = decodeBase64(file.data);
+  const warnings: string[] = [];
+
+  if (extension === 'pdf' || mimeType === 'application/pdf') {
+    const text = extractTextFromPdfBinary(bytes);
+    if (!text) warnings.push('PDF text extraction returned empty output.');
+    return { text, warnings };
+  }
+
+  if (
+    extension === 'docx' ||
+    mimeType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ) {
+    const text = await extractTextFromDocxBinary(bytes);
+    if (!text) warnings.push('DOCX text extraction returned empty output.');
+    return { text, warnings };
+  }
+
+  if (extension === 'doc' || mimeType === 'application/msword') {
+    const text = extractTextFromDocBinary(bytes);
+    if (!text) warnings.push('DOC text extraction returned empty output.');
+    return { text, warnings };
+  }
+
+  return { text: '', warnings: ['Unsupported file type for extraction.'] };
+};
 
 const parseJsonSafely = (value: string) => {
   try {
@@ -130,10 +260,21 @@ export default {
     const body = await request.json().catch(() => null);
     const resumeText = body?.text?.trim();
     const model = body?.model || env.OPENAI_MODEL || 'gpt-4o';
+    const file = body?.file;
+    const fileExtraction = await extractTextFromFile(file);
+    const warnings: string[] = [...fileExtraction.warnings];
+    const finalText =
+      resumeText && resumeText.length >= 80 ? resumeText : fileExtraction.text;
 
-    if (!resumeText) {
+    if (!finalText) {
       return new Response(
-        JSON.stringify({ profile: {}, skills: [], warnings: ['Resume text is empty.'] }),
+        JSON.stringify({
+          profile: {},
+          skills: [],
+          warnings: warnings.length
+            ? warnings
+            : ['Resume text is empty. Provide text or a supported file.'],
+        }),
         { status: 400, headers: { ...cors, 'Content-Type': 'application/json' } }
       );
     }
@@ -143,7 +284,7 @@ export default {
       Authorization: `Bearer ${env.OPENAI_API_KEY}`,
       'Content-Type': 'application/json',
     };
-    const prompt = buildPrompt(resumeText);
+    const prompt = buildPrompt(finalText);
 
     const tryResponses = async () => {
       const response = await fetch(`${baseUrl}/v1/responses`, {
@@ -226,10 +367,16 @@ export default {
         JSON.stringify({
           profile: {},
           skills: [],
-          warnings: ['AI returned invalid JSON.'],
+          warnings: warnings.length ? warnings : ['AI returned invalid JSON.'],
           error: fallback.error,
         }),
         { status: 502, headers: { ...cors, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    if (warnings.length) {
+      fallback.parsed.warnings = Array.from(
+        new Set([...(fallback.parsed.warnings || []), ...warnings])
       );
     }
 

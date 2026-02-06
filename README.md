@@ -35,17 +35,25 @@ local development and Pages hosting.
 ## Serverless AI Resume Parser (no API key in app)
 
 To use the AI resume parser without placing an API key in the client, deploy the
-Cloudflare Worker in `serverless/` and paste the Worker URL into the app.
+Vercel serverless endpoint in `vercel/` and paste its URL into the app.
 
-```bash
-cd serverless
-wrangler login
-wrangler secret put OPENAI_API_KEY
-wrangler deploy
+### Vercel (recommended)
+
+1. Create a Vercel project with **Root Directory** set to `vercel/`.
+2. Add environment variables:
+   - `OPENAI_API_KEY` (required)
+   - `OPENAI_MODEL` (optional, default: `gpt-4o`)
+   - `OPENAI_BASE_URL` (optional, default: `https://api.openai.com`)
+3. Deploy.
+
+Then set the **AI parser URL** in the app to:
+
+```
+https://<your-project>.vercel.app
 ```
 
-Then set the **AI parser URL** in the app (e.g.,
-`https://cipher-parser.<your-subdomain>.workers.dev`).
+Note: If you are using the web app over HTTPS (GitHub Pages), the parser URL
+must also be HTTPS. Browsers block insecure (http) requests from secure pages.
 
 ## What the app does
 
