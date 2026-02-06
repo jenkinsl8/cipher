@@ -688,8 +688,8 @@ export default function App() {
             managers, and gaps. Your data stays on device.
           </Text>
           <Text style={styles.helper}>
-            Download steps: Settings & Privacy -> Data Privacy -> Get a copy of your data ->
-            Connections -> Request archive.
+            Download steps: Settings &amp; Privacy {'>'} Data Privacy {'>'} Get a copy of your
+            data {'>'} Connections {'>'} Request archive.
           </Text>
           <Pressable style={styles.secondaryButton} onPress={handleLinkedInPick}>
             <Text style={styles.secondaryButtonText}>
