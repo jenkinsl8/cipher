@@ -32,10 +32,25 @@ https://jenkinsl8.github.io/cipher/
 Note: The web output is set to "single" to avoid expo-router requirements for
 local development and Pages hosting.
 
+## Serverless AI Resume Parser (no API key in app)
+
+To use the AI resume parser without placing an API key in the client, deploy the
+Cloudflare Worker in `serverless/` and paste the Worker URL into the app.
+
+```bash
+cd serverless
+wrangler login
+wrangler secret put OPENAI_API_KEY
+wrangler deploy
+```
+
+Then set the **AI parser URL** in the app (e.g.,
+`https://cipher-parser.<your-subdomain>.workers.dev`).
+
 ## What the app does
 
 - Extracts work history, skills, and education from PDF/DOCX resumes
-- Optional AI resume parser via local Ollama (no API key) for higher accuracy
+- Optional AI resume parser via serverless endpoint (no API key in app) for higher accuracy
 - Collects demographics and goals for personalization
 - Builds a skills portfolio with AI impact analysis per skill
 - Produces AI-forward opportunities and learning roadmaps

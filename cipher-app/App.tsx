@@ -99,8 +99,8 @@ export default function App() {
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
-  const [aiModel, setAiModel] = useState('llama3.1');
-  const [aiBaseUrl, setAiBaseUrl] = useState('http://localhost:11434');
+  const [aiModel, setAiModel] = useState('gpt-4o');
+  const [aiBaseUrl, setAiBaseUrl] = useState('');
   const [aiStatus, setAiStatus] = useState('');
   const [aiResumeExtraction, setAiResumeExtraction] = useState<ResumeExtraction | null>(null);
   const [useAiParser, setUseAiParser] = useState(false);
@@ -305,6 +305,7 @@ export default function App() {
     const text = resumeText.trim();
     if (text.length < 80) return;
     if (text === lastAutoParsed) return;
+    if (!aiBaseUrl.trim()) return;
     const timer = setTimeout(() => {
       handleAiResumeParse(true);
     }, 800);
@@ -318,14 +319,20 @@ export default function App() {
       }
       return;
     }
+    if (!aiBaseUrl.trim()) {
+      if (!isAuto) {
+        setAiStatus('Add the AI parser URL before running.');
+      }
+      return;
+    }
 
     if (!isAuto) {
-      setAiStatus('Parsing resume with local AI...');
+      setAiStatus('Parsing resume with serverless AI...');
     }
     try {
       const extraction = await parseResumeWithAI({
-        model: aiModel.trim() || 'llama3.1',
-        baseUrl: aiBaseUrl.trim() || 'http://localhost:11434',
+        model: aiModel.trim() || 'gpt-4o',
+        baseUrl: aiBaseUrl.trim(),
         resumeText,
       });
       setAiResumeExtraction(extraction);
@@ -432,23 +439,22 @@ export default function App() {
           subtitle="Use an AI model to extract structured data from the resume."
         >
           <Text style={styles.helper}>
-            Runs automatically on upload using a local AI model (no API key).
+            Runs automatically on upload via a serverless AI parser (no API key in app).
           </Text>
           <Text style={styles.helper}>
-            Requires a local AI server like Ollama. Example: install Ollama and run
-            "ollama run llama3.1".
+            Deploy the Cloudflare Worker in /serverless and paste its URL here.
           </Text>
           <Field
             label="Model"
             value={aiModel}
             onChangeText={setAiModel}
-            placeholder="llama3.1"
+            placeholder="gpt-4o"
           />
           <Field
-            label="API base URL"
+            label="AI parser URL"
             value={aiBaseUrl}
             onChangeText={setAiBaseUrl}
-            placeholder="http://localhost:11434"
+            placeholder="https://your-worker.workers.dev"
           />
           <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
             <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>

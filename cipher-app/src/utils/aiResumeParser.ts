@@ -50,11 +50,11 @@ export const normalizeAiResumePayload = (payload: AiResumePayload): ResumeExtrac
 export const parseResumeWithAI = async ({
   model,
   resumeText,
-  baseUrl = 'http://localhost:11434',
+  baseUrl,
 }: {
   model: string;
   resumeText: string;
-  baseUrl?: string;
+  baseUrl: string;
 }): Promise<ResumeExtraction> => {
   if (!resumeText.trim()) {
     return {
@@ -65,51 +65,19 @@ export const parseResumeWithAI = async ({
     };
   }
 
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/api/chat`, {
+  const response = await fetch(
+    `${baseUrl.replace(/\/$/, '')}/api/resume/parse`,
+    {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify({
       model,
-      temperature: 0,
-      stream: false,
-      format: 'json',
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are a resume parsing assistant. Extract structured data from the resume. Return only valid JSON.',
-        },
-        {
-          role: 'user',
-          content: `Parse the resume text and return JSON with:
-{
-  "profile": {
-    "name": "",
-    "currentRole": "",
-    "yearsExperience": "",
-    "education": "",
-    "certifications": "",
-    "industries": "",
-    "location": ""
-  },
-  "skills": ["", ""],
-  "warnings": [""]
-}
-
-Rules:
-- Keep values concise and exact.
-- skills should be a list of core skills, tools, and domains (no sentences).
-- yearsExperience should be a number as a string if possible.
-- If data is missing, use an empty string or omit warnings.
-
-Resume text:
-${resumeText}`,
-        },
-      ],
+      text: resumeText,
     }),
-  });
+  }
+  );
 
   if (!response.ok) {
     const errorText = await response.text();
@@ -117,17 +85,5 @@ ${resumeText}`,
   }
 
   const data = await response.json();
-  const content = data.message?.content || data.response || '';
-  if (!content) {
-    throw new Error('AI parser returned empty response.');
-  }
-
-  let payload: AiResumePayload;
-  try {
-    payload = JSON.parse(content);
-  } catch (error) {
-    throw new Error('AI parser returned invalid JSON.');
-  }
-
-  return normalizeAiResumePayload(payload);
+  return normalizeAiResumePayload(data as AiResumePayload);
 };
