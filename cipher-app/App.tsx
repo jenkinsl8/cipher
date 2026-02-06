@@ -150,15 +150,16 @@ export default function App() {
 
   const missingFields = useMemo(() => {
     const missing: string[] = [];
-    if (!resumeText.trim()) missing.push('Resume upload');
+    if (!resumeText.trim() && !resumeFilePayload?.data) missing.push('Resume upload');
     if (!mergedProfile.currentRole?.trim()) missing.push('Current role in resume');
     if (!mergedProfile.location?.trim()) missing.push('Location');
     if (!profile.age.trim()) missing.push('Age');
     if (!profile.gender.trim()) missing.push('Gender');
     if (!profile.raceEthnicity.trim()) missing.push('Race/ethnicity');
-    if (resumeSkills.length === 0) missing.push('Skills in resume');
+    if (resumeSkills.length === 0 && !resumeFilePayload?.data)
+      missing.push('Skills in resume');
     return missing;
-  }, [profile, mergedProfile, resumeSkills, resumeText]);
+  }, [profile, mergedProfile, resumeSkills, resumeText, resumeFilePayload]);
 
   useEffect(() => {
     setAiResumeExtraction(null);
@@ -246,17 +247,21 @@ export default function App() {
             data: Buffer.from(binary).toString('base64'),
           });
           const content = await extractTextFromPdfBinary(binary);
-          if (!content) {
-            setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
-            return;
+          if (content) {
+            setResumeText(content);
+            setResumeStatus(
+              `Extracted text from PDF (${content.split('\n').length} lines).`
+            );
+          } else {
+            setResumeText('');
+            setResumeStatus(
+              'PDF uploaded. AI will parse the attachment directly.'
+            );
           }
-          setResumeText(content);
-          setResumeStatus(
-            `Extracted text from PDF (${content.split('\n').length} lines).`
-          );
           return;
         } catch (error) {
-          setResumeStatus('PDF extraction failed. Paste resume text instead.');
+          setResumeText('');
+          setResumeStatus('PDF uploaded. AI will parse the attachment directly.');
           return;
         }
       }
@@ -280,17 +285,21 @@ export default function App() {
             data: Buffer.from(binary).toString('base64'),
           });
           const content = await extractTextFromDocxBinary(binary);
-          if (!content) {
-            setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
-            return;
+          if (content) {
+            setResumeText(content);
+            setResumeStatus(
+              `Extracted text from DOCX (${content.split('\n').length} lines).`
+            );
+          } else {
+            setResumeText('');
+            setResumeStatus(
+              'DOCX uploaded. AI will parse the attachment directly.'
+            );
           }
-          setResumeText(content);
-          setResumeStatus(
-            `Extracted text from DOCX (${content.split('\n').length} lines).`
-          );
           return;
         } catch (error) {
-          setResumeStatus('DOCX extraction failed. Paste resume text instead.');
+          setResumeText('');
+          setResumeStatus('DOCX uploaded. AI will parse the attachment directly.');
           return;
         }
       }
@@ -308,17 +317,21 @@ export default function App() {
             data: Buffer.from(binary).toString('base64'),
           });
           const content = await extractTextFromDocBinary(binary);
-          if (!content) {
-            setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
-            return;
+          if (content) {
+            setResumeText(content);
+            setResumeStatus(
+              'Extracted best-effort text from DOC. Review and paste if needed.'
+            );
+          } else {
+            setResumeText('');
+            setResumeStatus(
+              'DOC uploaded. AI will parse the attachment directly.'
+            );
           }
-          setResumeText(content);
-          setResumeStatus(
-            'Extracted best-effort text from DOC. Review and paste if needed.'
-          );
           return;
         } catch (error) {
-          setResumeStatus('DOC extraction failed. Paste resume text instead.');
+          setResumeText('');
+          setResumeStatus('DOC uploaded. AI will parse the attachment directly.');
           return;
         }
       }
@@ -351,13 +364,14 @@ export default function App() {
     const hasText = text.length >= 80;
     const hasFile = !!resumeFilePayload?.data;
     if (aiParserMode === 'openai') {
-      if (!hasText) return;
+      if (!hasText && !hasFile) return;
       if (!aiApiKey.trim()) return;
     } else {
       if (!hasText && !hasFile) return;
       if (!aiBaseUrl.trim()) return;
     }
-    if (text === lastAutoParsed) return;
+    const autoKey = text || resumeFilePayload?.name || '';
+    if (autoKey && autoKey === lastAutoParsed) return;
     const timer = setTimeout(() => {
       handleAiResumeParse(true);
     }, 800);
@@ -374,7 +388,7 @@ export default function App() {
   ]);
 
   const handleAiResumeParse = async (isAuto = false) => {
-    if (aiParserMode === 'openai' && !resumeText.trim()) {
+    if (aiParserMode === 'openai' && !resumeText.trim() && !resumeFilePayload?.data) {
       if (!isAuto) {
         setAiStatus('Add resume text before running the AI parser.');
       }
@@ -431,7 +445,7 @@ export default function App() {
             });
       setAiResumeExtraction(extraction);
       setUseAiParser(true);
-      setLastAutoParsed(resumeText.trim());
+      setLastAutoParsed(resumeText.trim() || resumeFilePayload?.name || '');
       if (!isAuto) {
         setAiStatus('AI parsing complete. Review extracted data.');
       }
@@ -523,7 +537,7 @@ export default function App() {
             placeholder="Paste resume text for extraction and ATS scan"
             multiline
           />
-          {resumeExtraction.warnings.length ? (
+          {resumeExtraction.warnings.length && resumeText.trim() ? (
             resumeExtraction.warnings.map((warning) => (
               <Text key={warning} style={styles.missingText}>
                 - {warning}
