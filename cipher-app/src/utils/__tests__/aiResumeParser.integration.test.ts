@@ -64,7 +64,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
       resumeText: '',
       file: {
         name: 'resume.pdf',
-        mimeType: undefined,
+        mimeType: '',
         data: createPdfBase64(),
       },
     });
@@ -82,7 +82,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
       resumeText: 'Experience: Product Manager',
       file: {
         name: 'resume.docx',
-        mimeType: undefined,
+        mimeType: '',
         data: await createDocxBase64(),
       },
     });
