@@ -94,13 +94,27 @@ const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   return new Uint8Array(Buffer.from(base64, 'base64'));
 };
 
+const normalizeBase64 = (value: string) => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  const withoutPrefix = trimmed.includes('base64,')
+    ? trimmed.split('base64,')[1]
+    : trimmed;
+  const compact = withoutPrefix.replace(/\s/g, '');
+  const remainder = compact.length % 4;
+  if (remainder === 0) return compact;
+  if (remainder === 2) return `${compact}==`;
+  if (remainder === 3) return `${compact}=`;
+  return compact;
+};
+
 const blobToBase64 = (blob: Blob) =>
   new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
       const result = reader.result?.toString() || '';
       const base64 = result.split(',')[1] || '';
-      resolve(base64);
+      resolve(normalizeBase64(base64));
     };
     reader.onerror = () => reject(new Error('Failed to read file data.'));
     reader.readAsDataURL(blob);
@@ -119,9 +133,10 @@ const readAssetBase64 = async (asset: DocumentPicker.DocumentPickerAsset) => {
     }
   }
 
-  return FileSystem.readAsStringAsync(asset.uri, {
+  const rawBase64 = await FileSystem.readAsStringAsync(asset.uri, {
     encoding: FileSystem.EncodingType.Base64,
   });
+  return normalizeBase64(rawBase64);
 };
 
 const isHttpsContext = () => {
@@ -267,7 +282,8 @@ export default function App() {
       if (extension === 'pdf' || mimeType === 'application/pdf') {
         try {
           const base64 = await readAssetBase64(asset);
-          if (!base64) {
+          const normalized = normalizeBase64(base64);
+          if (!normalized) {
             setResumeStatus('Could not read PDF data for AI parsing.');
             return;
           }
@@ -279,7 +295,7 @@ export default function App() {
           setResumeFilePayload({
             name,
             mimeType: mimeType || 'application/pdf',
-            data: base64,
+            data: normalized,
           });
           const content = await extractTextFromPdfBinary(binary);
           if (content) {
@@ -308,7 +324,8 @@ export default function App() {
       ) {
         try {
           const base64 = await readAssetBase64(asset);
-          if (!base64) {
+          const normalized = normalizeBase64(base64);
+          if (!normalized) {
             setResumeStatus('Could not read DOCX data for AI parsing.');
             return;
           }
@@ -322,7 +339,7 @@ export default function App() {
             mimeType:
               mimeType ||
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            data: base64,
+            data: normalized,
           });
           const content = await extractTextFromDocxBinary(binary);
           if (content) {
@@ -347,7 +364,8 @@ export default function App() {
       if (extension === 'doc' || mimeType === 'application/msword') {
         try {
           const base64 = await readAssetBase64(asset);
-          if (!base64) {
+          const normalized = normalizeBase64(base64);
+          if (!normalized) {
             setResumeStatus('Could not read DOC data for AI parsing.');
             return;
           }
@@ -359,7 +377,7 @@ export default function App() {
           setResumeFilePayload({
             name,
             mimeType: mimeType || 'application/msword',
-            data: base64,
+            data: normalized,
           });
           const content = await extractTextFromDocBinary(binary);
           if (content) {
@@ -392,14 +410,15 @@ export default function App() {
         encoding: FileSystem.EncodingType.UTF8,
       });
       const base64 = await readAssetBase64(asset);
-      if (!base64) {
+      const normalized = normalizeBase64(base64);
+      if (!normalized) {
         setResumeStatus('Could not read file data for AI parsing.');
         return;
       }
       setResumeFilePayload({
         name,
         mimeType: mimeType || 'text/plain',
-        data: base64,
+        data: normalized,
       });
       setResumeText(content);
       setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
