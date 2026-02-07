@@ -9,6 +9,7 @@ import {
   INDUSTRY_OUTLOOK_BY_CATEGORY,
   KEYWORD_RULES,
   LOW_COST_OPTIONS,
+  LOCATION_SALARY_MULTIPLIERS,
   MARKET_VALIDATED_RESOURCES,
 } from '../data/constants';
 import {
@@ -792,25 +793,92 @@ const buildSkillsGapResources = (): ReportSection => ({
   ],
 });
 
-const buildCompetencyMilestones = (skills: SkillInsight[]): ReportSection => {
+const resolveLocationMultiplier = (location: string) => {
+  if (!location) {
+    return { multiplier: 1, label: 'US national (conservative)' };
+  }
+  const match = LOCATION_SALARY_MULTIPLIERS.find((entry) => entry.match.test(location));
+  return match
+    ? { multiplier: match.multiplier, label: match.label }
+    : { multiplier: 1, label: `${location} (conservative)` };
+};
+
+const formatRange = (min: number, max: number) => {
+  const format = (value: number) => `${Math.round(value / 1000)}K`;
+  return `$${format(min)}-$${format(max)}`;
+};
+
+const buildCompetencyMilestones = (
+  skills: SkillInsight[],
+  profile: UserProfile
+): ReportSection => {
   const topSkills = skills.slice(0, 3);
-  const salaryByCategory: Record<SkillCategory, string> = {
-    technical: 'Beginner $70K | Competent $95K | Proficient $125K | Expert $160K+',
-    analytical: 'Beginner $65K | Competent $85K | Proficient $110K | Expert $145K+',
-    leadership: 'Beginner $80K | Competent $110K | Proficient $150K | Expert $200K+',
-    creative: 'Beginner $55K | Competent $75K | Proficient $100K | Expert $130K+',
-    'soft/interpersonal': 'Beginner $50K | Competent $70K | Proficient $95K | Expert $130K+',
-    'domain-specific': 'Beginner $60K | Competent $85K | Proficient $115K | Expert $150K+',
+  const salaryBase: Record<
+    SkillCategory,
+    { beginner: [number, number]; competent: [number, number]; proficient: [number, number]; expert: [number, number] }
+  > = {
+    technical: {
+      beginner: [70000, 90000],
+      competent: [90000, 115000],
+      proficient: [115000, 140000],
+      expert: [140000, 175000],
+    },
+    analytical: {
+      beginner: [65000, 85000],
+      competent: [85000, 105000],
+      proficient: [105000, 125000],
+      expert: [125000, 155000],
+    },
+    leadership: {
+      beginner: [80000, 105000],
+      competent: [105000, 130000],
+      proficient: [130000, 165000],
+      expert: [165000, 210000],
+    },
+    creative: {
+      beginner: [55000, 70000],
+      competent: [70000, 90000],
+      proficient: [90000, 115000],
+      expert: [115000, 140000],
+    },
+    'soft/interpersonal': {
+      beginner: [50000, 65000],
+      competent: [65000, 80000],
+      proficient: [80000, 100000],
+      expert: [100000, 125000],
+    },
+    'domain-specific': {
+      beginner: [60000, 80000],
+      competent: [80000, 100000],
+      proficient: [100000, 125000],
+      expert: [125000, 155000],
+    },
+  };
+
+  const locationInfo = resolveLocationMultiplier(profile.location || '');
+  const adjust = (value: number) => Math.round((value * locationInfo.multiplier) / 1000) * 1000;
+  const buildSalaryLine = (category: SkillCategory) => {
+    const base = salaryBase[category];
+    return `Beginner ${formatRange(adjust(base.beginner[0]), adjust(base.beginner[1]))} | Competent ${formatRange(
+      adjust(base.competent[0]),
+      adjust(base.competent[1])
+    )} | Proficient ${formatRange(adjust(base.proficient[0]), adjust(base.proficient[1]))} | Expert ${formatRange(
+      adjust(base.expert[0]),
+      adjust(base.expert[1])
+    )}`;
   };
 
   return {
     id: 'competency-milestones',
     title: 'Competency Milestones',
-    summary: 'Compensation increases with demonstrated competence, not tenure.',
+    summary: `Conservative salary estimates for ${locationInfo.label}.`,
     bullets: topSkills.length
-      ? topSkills.map(
-          (skill) => `${skill.name}: ${salaryByCategory[skill.category]} (example ranges)`
-        )
+      ? [
+          ...topSkills.map(
+            (skill) => `${skill.name}: ${buildSalaryLine(skill.category)}`
+          ),
+          'Source guidance: validate with BLS OOH, Levels.fyi, Glassdoor, and local postings.',
+        ]
       : ['Add skills to generate competency milestones.'],
   };
 };
@@ -943,7 +1011,7 @@ const buildCareerInsights = (profile: UserProfile): ReportSection => ({
     'Role analysis: clear ladders, skill differentiators by level, AI task automation impacts.',
     'Market analysis: geographic hotspots, remote prevalence, supply/demand signals.',
     `Future outlook: 3-5-10 year projections with AI impact for ${profile.currentRole || 'target roles'}.`,
-    'Compensation ranges: Entry $X-$Y, Mid $X-$Y, Senior $X-$Y, Lead $X-$Y, Director $X-$Y.',
+    `Compensation ranges: use BLS and salary surveys for ${profile.location || 'your location'}; keep estimates conservative.`,
   ],
 });
 
@@ -991,7 +1059,7 @@ export const generateCipherReport = (
     careerPaths: buildCareerPaths(profile, rankedSkills),
     learningRoadmap: buildLearningRoadmap(profile),
     skillsGapResources: buildSkillsGapResources(),
-    competencyMilestones: buildCompetencyMilestones(rankedSkills),
+    competencyMilestones: buildCompetencyMilestones(rankedSkills, profile),
     projectsToPursue: buildProjectsToPursue(),
     earningsMaximization: buildEarningsMaximization(),
     opportunityMap: buildOpportunityMap(),

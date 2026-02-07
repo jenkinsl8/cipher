@@ -485,3 +485,20 @@ export const FORMAL_EDUCATION_OPTIONS = [
   'Bootcamps with published placement data',
   'Graduate certificates from recognized institutions',
 ];
+
+export const LOCATION_SALARY_MULTIPLIERS: Array<{
+  match: RegExp;
+  multiplier: number;
+  label: string;
+}> = [
+  { match: /san francisco|bay area|san jose|oakland/i, multiplier: 1.25, label: 'SF Bay Area, CA' },
+  { match: /new york,\s*ny|new york city/i, multiplier: 1.2, label: 'New York, NY' },
+  { match: /seattle,\s*wa/i, multiplier: 1.15, label: 'Seattle, WA' },
+  { match: /boston,\s*ma/i, multiplier: 1.15, label: 'Boston, MA' },
+  { match: /austin,\s*tx/i, multiplier: 1.1, label: 'Austin, TX' },
+  { match: /denver,\s*co/i, multiplier: 1.05, label: 'Denver, CO' },
+  { match: /chicago,\s*il/i, multiplier: 1.05, label: 'Chicago, IL' },
+  { match: /columbus,\s*oh/i, multiplier: 0.95, label: 'Columbus, OH' },
+  { match: /atlanta,\s*ga/i, multiplier: 1.0, label: 'Atlanta, GA' },
+  { match: /remote/i, multiplier: 1.0, label: 'Remote (US)' },
+];
