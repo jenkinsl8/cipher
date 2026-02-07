@@ -30,11 +30,11 @@ import {
 import {
   AILiteracy,
   CareerGoal,
-  MarketSnapshot,
   RiskTolerance,
   UserProfile,
   ResumeExtraction,
 } from './src/types';
+import { getMarketSnapshotForLocation } from './src/utils/market';
 
 const initialProfile: UserProfile = {
   name: '',
@@ -56,16 +56,6 @@ const initialProfile: UserProfile = {
   volunteer: '',
   sideProjects: '',
   notes: '',
-};
-
-const initialMarket: MarketSnapshot = {
-  updatedAt: '',
-  indicators: '',
-  hiringTrends: '',
-  layoffs: '',
-  funding: '',
-  aiTrends: '',
-  sources: '',
 };
 
 const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
@@ -183,7 +173,6 @@ const mergeProfile = (
 
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
-  const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
   const [resumeText, setResumeText] = useState('');
@@ -222,8 +211,15 @@ export default function App() {
     [profile, resumeExtraction.profile]
   );
   const report = useMemo(
-    () => generateCipherReport(mergedProfile, resumeSkills, market, connections, resumeText),
-    [mergedProfile, resumeSkills, market, connections, resumeText]
+    () =>
+      generateCipherReport(
+        mergedProfile,
+        resumeSkills,
+        getMarketSnapshotForLocation(mergedProfile.location || ''),
+        connections,
+        resumeText
+      ),
+    [mergedProfile, resumeSkills, connections, resumeText]
   );
 
   const missingFields = useMemo(() => {
@@ -248,10 +244,6 @@ export default function App() {
 
   const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const updateMarket = <K extends keyof MarketSnapshot>(key: K, value: MarketSnapshot[K]) => {
-    setMarket((prev) => ({ ...prev, [key]: value }));
   };
 
   const toggleGoal = (goal: CareerGoal) => {
@@ -571,7 +563,7 @@ export default function App() {
     {
       name: 'Sentinel',
       role: 'Market conditions',
-      status: market.updatedAt ? 'Synced' : 'Needs data',
+      status: mergedProfile.location ? 'Synced' : 'Waiting for location',
     },
     {
       name: 'Aegis',
@@ -878,56 +870,10 @@ export default function App() {
         </Section>
 
         <Section
-          title="Market Snapshot"
-          subtitle="Provide recent market signals so Cipher can tailor advice."
+          title="Market Snapshot (Auto)"
+          subtitle="Cipher's market agent builds this from your location."
         >
-          <Field
-            label="Date of latest market scan"
-            value={market.updatedAt}
-            onChangeText={(value) => updateMarket('updatedAt', value)}
-            placeholder="e.g., 2026-02-05"
-          />
-          <Field
-            label="Economic indicators"
-            value={market.indicators}
-            onChangeText={(value) => updateMarket('indicators', value)}
-            placeholder="Unemployment, job openings, GDP notes"
-            multiline
-          />
-          <Field
-            label="Hiring trends"
-            value={market.hiringTrends}
-            onChangeText={(value) => updateMarket('hiringTrends', value)}
-            placeholder="Which sectors are hiring or freezing?"
-            multiline
-          />
-          <Field
-            label="Layoff patterns"
-            value={market.layoffs}
-            onChangeText={(value) => updateMarket('layoffs', value)}
-            placeholder="Recent layoffs or restructures"
-            multiline
-          />
-          <Field
-            label="Funding or M&A activity"
-            value={market.funding}
-            onChangeText={(value) => updateMarket('funding', value)}
-            placeholder="Funding rounds, acquisitions, IPO notes"
-            multiline
-          />
-          <Field
-            label="AI hiring or automation trends"
-            value={market.aiTrends}
-            onChangeText={(value) => updateMarket('aiTrends', value)}
-            placeholder="AI teams hiring, automation announcements"
-            multiline
-          />
-          <Field
-            label="Sources"
-            value={market.sources}
-            onChangeText={(value) => updateMarket('sources', value)}
-            placeholder="BLS, LinkedIn, WEF, Glassdoor, etc."
-          />
+          <ReportSectionView section={report.marketSnapshot} />
         </Section>
 
         <Section
