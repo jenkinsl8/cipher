@@ -578,12 +578,64 @@ const buildAIForward = (skills: SkillInput[], goals: CareerGoal[]): ReportSectio
 
 const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): CareerPathTier[] => {
   const baseRole = profile.currentRole || 'your current role';
-  const mainSkill = topSkills[0]?.name || 'core strengths';
+  const mainSkill = topSkills[0]?.name || 'AI';
+  const secondarySkill = topSkills[1]?.name || 'Business';
+  const baseRoleClean = profile.currentRole
+    ? profile.currentRole.replace(/^(senior|lead|principal|jr|junior)\s+/i, '').trim()
+    : '';
   const demographicNotes = buildDemographicCareerNotes(profile);
+  const traditionalPositions = profile.currentRole
+    ? [
+        {
+          title: `Senior ${baseRoleClean || baseRole}`,
+          fit: `Most realistic next step leveraging ${mainSkill}.`,
+        },
+        {
+          title: `Lead ${baseRoleClean || baseRole}`,
+          fit: 'Adds leadership scope while staying in your lane.',
+        },
+      ]
+    : [
+        {
+          title: 'Senior role in your function',
+          fit: `Realistically achievable with your ${mainSkill} track record.`,
+        },
+        {
+          title: 'Lead role in your function',
+          fit: 'Progression path that stays close to existing experience.',
+        },
+      ];
+  const alternatePositions = [
+    {
+      title: `${baseRoleClean || 'Functional'} Operations Lead`,
+      fit: `Realistically doable by bridging ${mainSkill} with operations execution.`,
+    },
+    {
+      title: `${mainSkill} Program Manager`,
+      fit: `Hybrid path combining ${mainSkill} with cross-functional delivery.`,
+    },
+    {
+      title: `${secondarySkill} Strategy Lead`,
+      fit: `Practical pivot using your ${secondarySkill.toLowerCase()} strengths.`,
+    },
+  ];
+  const moonshotPositions = [
+    {
+      title: `Director of ${mainSkill} Transformation`,
+      fit: 'Realistically achievable with 12-24 months of visible impact.',
+    },
+    {
+      title: `Founder - ${mainSkill} Advisory`,
+      fit: 'Achievable if you validate demand and build a client pipeline.',
+    },
+  ];
 
   return [
     {
       tier: 'Tier 1: Traditional Path',
+      pathType: 'Traditional',
+      feasibility: 'Realistically achievable with incremental promotions.',
+      positions: traditionalPositions,
       title: `Advance in ${baseRole}`,
       overview: `Follow the established ladder in ${baseRole}, emphasizing ${mainSkill}.`,
       riskReward: 'Lower risk, predictable growth, strong benefits.',
@@ -643,6 +695,9 @@ const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): Care
     },
     {
       tier: 'Tier 2: Off-the-Beaten-Path',
+      pathType: 'Alternate',
+      feasibility: 'Realistically doable with a 6-12 month bridge plan.',
+      positions: alternatePositions,
       title: `Hybrid pivot combining ${mainSkill} with adjacent roles`,
       overview:
         'Leverage transferable skills to move into adjacent, faster-growing roles.',
@@ -702,6 +757,9 @@ const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): Care
     },
     {
       tier: 'Tier 3: Moonshot Path',
+      pathType: 'Moonshot',
+      feasibility: 'Realistically achievable with milestone gating and proof.',
+      positions: moonshotPositions,
       title: 'AI-enabled entrepreneurial or executive leap',
       overview:
         'Pursue a high-upside path such as founding, AI leadership, or rapid executive growth.',

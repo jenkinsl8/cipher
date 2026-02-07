@@ -211,6 +211,11 @@ export default function App() {
   const [useAiParser, setUseAiParser] = useState(false);
   const [autoParseEnabled, setAutoParseEnabled] = useState(true);
   const [lastAutoParsed, setLastAutoParsed] = useState('');
+  const [agentQuestion, setAgentQuestion] = useState('');
+  const [agentThread, setAgentThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [agentChatStatus, setAgentChatStatus] = useState('');
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
@@ -712,7 +717,83 @@ export default function App() {
     }
   };
 
-  const agentStatus = [
+  const handleAgentChat = async () => {
+    const question = agentQuestion.trim();
+    if (!question) {
+      setAgentChatStatus('Add a question for Cipher before sending.');
+      return;
+    }
+    if (aiParserMode !== 'openai') {
+      setAgentChatStatus('Agent chat requires OpenAI mode. Switch to OpenAI API key.');
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      setAgentChatStatus('Add your OpenAI API key to enable agent chat.');
+      return;
+    }
+
+    const context = [
+      `Name: ${mergedProfile.name || 'Not provided'}`,
+      `Current role: ${mergedProfile.currentRole || 'Not provided'}`,
+      `Location: ${mergedProfile.location || 'Not provided'}`,
+      `Top skills: ${
+        report.skillsPortfolio.length
+          ? report.skillsPortfolio.slice(0, 3).map((skill) => skill.name).join(', ')
+          : 'Not detected'
+      }`,
+      `Career goals: ${profile.careerGoals.join(', ') || 'Not provided'}`,
+      `Risk tolerance: ${profile.riskTolerance}`,
+      `AI literacy: ${profile.aiLiteracy}`,
+      `Market snapshot: ${report.marketSnapshot.summary}`,
+    ].join('\n');
+
+    const nextThread = [...agentThread, { role: 'user', content: question }].slice(-6);
+    setAgentThread(nextThread);
+    setAgentQuestion('');
+    setAgentChatStatus('Cipher is thinking...');
+
+    try {
+      const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${aiApiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: aiModel.trim() || 'gpt-4o',
+          temperature: 0.4,
+          messages: [
+            {
+              role: 'system',
+              content:
+                `You are Cipher, a career strategist. Use the profile context below. ` +
+                `Be direct, realistic, and actionable. Ask a clarifying question if needed.\n\n${context}`,
+            },
+            ...nextThread,
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Agent chat failed (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || '';
+      if (!reply) {
+        throw new Error('Agent did not return a response.');
+      }
+      setAgentThread([...nextThread, { role: 'assistant', content: reply }]);
+      setAgentChatStatus('');
+    } catch (error) {
+      setAgentChatStatus(
+        error instanceof Error ? error.message : 'Agent chat failed. Try again.'
+      );
+    }
+  };
+
+  const agentRoster = [
     { name: 'Cipher', role: 'Career strategist', status: 'Active' },
     {
       name: 'Sentinel',
@@ -803,6 +884,7 @@ export default function App() {
               <LinkButton label="Resume Intake" onPress={() => scrollToSection('resume')} />
               <LinkButton label="AI Parser" onPress={() => scrollToSection('ai-parser')} />
               <LinkButton label="LinkedIn" onPress={() => scrollToSection('linkedin')} />
+              <LinkButton label="Agent Chat" onPress={() => scrollToSection('agent-chat')} />
               <LinkButton label="Detailed Report" onPress={() => scrollToSection('detailed-report')} />
             </View>
 
@@ -818,7 +900,7 @@ export default function App() {
 
         <Section title="Agent Lineup" subtitle="Multi-agent workflow status">
           <View style={styles.agentGrid}>
-            {agentStatus.map((agent) => (
+            {agentRoster.map((agent) => (
               <View key={agent.name} style={styles.agentCard}>
                 <Text style={styles.agentName}>{agent.name}</Text>
                 <Text style={styles.agentRole}>{agent.role}</Text>
@@ -826,6 +908,37 @@ export default function App() {
               </View>
             ))}
           </View>
+        </Section>
+
+        <Section
+          title="Agent Console"
+          subtitle="Interact with Cipher and the agent team directly."
+          sectionId="agent-chat"
+          onLayout={handleSectionLayout}
+        >
+          <Field
+            label="Ask a question"
+            value={agentQuestion}
+            onChangeText={setAgentQuestion}
+            placeholder="Ask for career moves, negotiation prep, or strategy."
+            multiline
+          />
+          <Pressable style={styles.primaryButton} onPress={handleAgentChat}>
+            <Text style={styles.primaryButtonText}>Ask Cipher</Text>
+          </Pressable>
+          {agentChatStatus ? <Text style={styles.helper}>{agentChatStatus}</Text> : null}
+          {agentThread.length ? (
+            agentThread.map((message, index) => (
+              <View key={`${message.role}-${index}`} style={styles.chatBubble}>
+                <Text style={styles.chatRole}>
+                  {message.role === 'user' ? 'You' : 'Cipher'}
+                </Text>
+                <Text style={styles.chatText}>{message.content}</Text>
+              </View>
+            ))
+          ) : (
+            <Text style={styles.helper}>No agent responses yet.</Text>
+          )}
         </Section>
 
         <Section
@@ -1236,16 +1349,53 @@ export default function App() {
             </CollapsibleCard>
 
             <CollapsibleCard title="Career Path Options" defaultCollapsed={false}>
-              {report.careerPaths.map((path) => (
+              {report.careerPaths.map((path, index) => (
                 <View key={path.tier} style={styles.reportCard}>
                   <Text style={styles.reportTitle}>{path.tier}</Text>
                   <Text style={styles.reportText}>{path.title}</Text>
                   <Text style={styles.reportText}>{path.overview}</Text>
+                  <Text style={styles.reportMeta}>
+                    Path type: {path.pathType} ({path.feasibility})
+                  </Text>
                   <Text style={styles.reportText}>Risk/reward: {path.riskReward}</Text>
                   <Text style={styles.reportText}>
                     Earning potential: {path.earningPotential}
                   </Text>
                   <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
+                  {path.positions.length ? (
+                    <>
+                      <Text style={styles.reportSubheading}>Suggested positions</Text>
+                      {path.positions.map((position) => (
+                        <View key={position.title} style={styles.positionCard}>
+                          <Text style={styles.reportText}>{position.title}</Text>
+                          <Text style={styles.reportMeta}>{position.fit}</Text>
+                          <Pressable
+                            style={styles.linkButton}
+                            onPress={() => scrollToSection(`career-plan-${index}`)}
+                          >
+                            <Text style={styles.linkButtonText}>View detailed plan</Text>
+                          </Pressable>
+                        </View>
+                      ))}
+                    </>
+                  ) : null}
+                </View>
+              ))}
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Career Path Plans" defaultCollapsed={false}>
+              {report.careerPaths.map((path, index) => (
+                <View
+                  key={path.tier}
+                  style={styles.reportCard}
+                  onLayout={(event) =>
+                    handleSectionLayout(`career-plan-${index}`, event.nativeEvent.layout.y)
+                  }
+                >
+                  <Text style={styles.reportTitle}>{path.title}</Text>
+                  <Text style={styles.reportMeta}>
+                    {path.pathType} plan ({path.feasibility})
+                  </Text>
                   {path.demographicNotes.length ? (
                     <>
                       <Text style={styles.reportSubheading}>Demographic considerations</Text>
@@ -1577,6 +1727,7 @@ const NavRail = ({
     { id: 'resume', label: 'Resume' },
     { id: 'ai-parser', label: 'AI Parser' },
     { id: 'linkedin', label: 'LinkedIn' },
+    { id: 'agent-chat', label: 'Agent Chat' },
     { id: 'detailed-report', label: 'Report' },
   ];
 
@@ -2083,6 +2234,30 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  positionCard: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chatBubble: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chatRole: {
+    color: colors.accentStrong,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  chatText: {
+    color: colors.text,
   },
   reportTitle: {
     color: colors.text,

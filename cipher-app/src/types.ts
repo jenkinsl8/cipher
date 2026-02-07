@@ -102,8 +102,16 @@ export type ReportSection = {
   bullets?: string[];
 };
 
+export type CareerPathPosition = {
+  title: string;
+  fit: string;
+};
+
 export type CareerPathTier = {
   tier: string;
+  pathType: 'Traditional' | 'Alternate' | 'Moonshot';
+  feasibility: string;
+  positions: CareerPathPosition[];
   title: string;
   overview: string;
   riskReward: string;
