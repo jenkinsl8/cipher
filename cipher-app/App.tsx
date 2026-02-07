@@ -221,6 +221,11 @@ export default function App() {
     Array<{ role: 'user' | 'assistant'; content: string }>
   >([]);
   const [marketChatStatus, setMarketChatStatus] = useState('');
+  const [skillsQuestion, setSkillsQuestion] = useState('');
+  const [skillsThread, setSkillsThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [skillsChatStatus, setSkillsChatStatus] = useState('');
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
@@ -866,6 +871,89 @@ export default function App() {
     }
   };
 
+  const handleSkillsAgentChat = async () => {
+    const question = skillsQuestion.trim();
+    if (!question) {
+      setSkillsChatStatus('Add a question for the skills agent before sending.');
+      return;
+    }
+    if (aiParserMode !== 'openai') {
+      setSkillsChatStatus('Skills agent chat requires OpenAI mode. Switch to OpenAI API key.');
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      setSkillsChatStatus('Add your OpenAI API key to enable skills agent chat.');
+      return;
+    }
+
+    const skillsContext = [
+      `Current role: ${mergedProfile.currentRole || 'Not provided'}`,
+      `Top skills: ${
+        report.skillsPortfolio.length
+          ? report.skillsPortfolio
+              .slice(0, 6)
+              .map((skill) => `${skill.name} (${skill.category})`)
+              .join(', ')
+          : 'Not detected'
+      }`,
+      `AI risk highlights: ${
+        report.skillsPortfolio.length
+          ? report.skillsPortfolio
+              .slice(0, 3)
+              .map((skill) => `${skill.name}: ${skill.aiRisk}`)
+              .join('; ')
+          : 'Not detected'
+      }`,
+      `Career goals: ${profile.careerGoals.join(', ') || 'Not provided'}`,
+    ].join('\n');
+
+    const nextThread = [...skillsThread, { role: 'user', content: question }].slice(-6);
+    setSkillsThread(nextThread);
+    setSkillsQuestion('');
+    setSkillsChatStatus('Aegis is analyzing your skills portfolio...');
+
+    try {
+      const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${aiApiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: aiModel.trim() || 'gpt-4o',
+          temperature: 0.35,
+          messages: [
+            {
+              role: 'system',
+              content:
+                `You are Aegis, a skills strategist. Use the context below to evaluate ` +
+                `skills, risks, and next steps. Be concise and actionable. Ask one ` +
+                `clarifying question if needed.\n\n${skillsContext}`,
+            },
+            ...nextThread,
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Skills agent failed (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || '';
+      if (!reply) {
+        throw new Error('Skills agent did not return a response.');
+      }
+      setSkillsThread([...nextThread, { role: 'assistant', content: reply }]);
+      setSkillsChatStatus('');
+    } catch (error) {
+      setSkillsChatStatus(
+        error instanceof Error ? error.message : 'Skills agent chat failed. Try again.'
+      );
+    }
+  };
+
   const agentRoster = [
     { name: 'Cipher', role: 'Career strategist', status: 'Active' },
     {
@@ -1444,6 +1532,32 @@ export default function App() {
                 <Text style={styles.helper}>
                   Upload your resume to generate the skills portfolio.
                 </Text>
+              )}
+              <Text style={styles.helper}>
+                Ask Aegis to explain skills gaps, AI risk, or prioritization.
+              </Text>
+              <Field
+                label="Ask the skills agent"
+                value={skillsQuestion}
+                onChangeText={setSkillsQuestion}
+                placeholder="Ask about skills to prioritize or de-risk."
+                multiline
+              />
+              <Pressable style={styles.primaryButton} onPress={handleSkillsAgentChat}>
+                <Text style={styles.primaryButtonText}>Ask Aegis</Text>
+              </Pressable>
+              {skillsChatStatus ? <Text style={styles.helper}>{skillsChatStatus}</Text> : null}
+              {skillsThread.length ? (
+                skillsThread.map((message, index) => (
+                  <View key={`${message.role}-${index}`} style={styles.chatBubble}>
+                    <Text style={styles.chatRole}>
+                      {message.role === 'user' ? 'You' : 'Aegis'}
+                    </Text>
+                    <Text style={styles.chatText}>{message.content}</Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.helper}>No skills agent responses yet.</Text>
               )}
             </CollapsibleCard>
 
