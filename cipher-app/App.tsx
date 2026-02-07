@@ -612,8 +612,11 @@ export default function App() {
             populate role, experience, education, and skills.
           </Text>
           <Text style={styles.helper}>
-            PDF extraction is best-effort for text-based PDFs. If results look off, paste
-            the resume text.
+            ATS scan runs on text extracted from the uploaded file.
+          </Text>
+          <Text style={styles.helper}>
+            PDF extraction is best-effort for text-based PDFs. If results look off, upload
+            a text-based PDF or DOCX.
           </Text>
           <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
             <Text style={styles.secondaryButtonText}>
@@ -624,13 +627,6 @@ export default function App() {
             <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
           ) : null}
           {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
-          <Field
-            label="Or paste resume text here"
-            value={resumeText}
-            onChangeText={setResumeText}
-            placeholder="Paste resume text for extraction and ATS scan"
-            multiline
-          />
           {resumeExtraction.warnings.length && resumeText.trim() ? (
             resumeExtraction.warnings.map((warning) => (
               <Text key={warning} style={styles.missingText}>
