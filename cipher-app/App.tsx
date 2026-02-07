@@ -215,6 +215,7 @@ export default function App() {
   const [aiReportStatus, setAiReportStatus] = useState('');
   const [aiReportUpdatedAt, setAiReportUpdatedAt] = useState<number | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState(false);
+  const [lastAiReportKey, setLastAiReportKey] = useState('');
   const [agentQuestion, setAgentQuestion] = useState('');
   const [agentThread, setAgentThread] = useState<
     Array<{ role: 'user' | 'assistant'; content: string }>
@@ -288,6 +289,11 @@ export default function App() {
     new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
   const formatTimestamp = (timestamp: number) =>
     new Date(timestamp).toISOString().replace('T', ' ').slice(0, 16);
+  const buildReportKey = () => {
+    const baseText = resumeText.trim() || resumeFilePayload?.name || '';
+    const stamp = resumeUploadedAt ? String(resumeUploadedAt) : '';
+    return `${baseText.slice(0, 200)}|${stamp}|${resumeSkills.length}`;
+  };
 
   const missingFields = useMemo(() => {
     const missing: string[] = [];
@@ -311,6 +317,7 @@ export default function App() {
     setAiReport(null);
     setAiReportUpdatedAt(null);
     setAiReportStatus('');
+    setLastAiReportKey('');
   }, [resumeText]);
 
   useEffect(() => {
@@ -656,6 +663,30 @@ export default function App() {
     lastAutoParsed,
   ]);
 
+  useEffect(() => {
+    const resumeReady = !!resumeText.trim() || resumeSkills.length > 0;
+    if (!resumeReady) return;
+    if (aiParserMode !== 'openai' || !aiApiKey.trim()) return;
+    if (aiReportLoading) return;
+    const reportKey = buildReportKey();
+    if (reportKey === lastAiReportKey) return;
+    const timer = setTimeout(() => {
+      handleAiReportGenerate(true);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [
+    resumeText,
+    resumeSkills,
+    aiApiKey,
+    aiBaseUrl,
+    aiModel,
+    aiParserMode,
+    aiReportLoading,
+    lastAiReportKey,
+    resumeFilePayload,
+    resumeUploadedAt,
+  ]);
+
   const handleAiResumeParse = async (isAuto = false) => {
     if (aiParserMode === 'openai' && !resumeText.trim() && !resumeFilePayload?.data) {
       if (!isAuto) {
@@ -733,19 +764,29 @@ export default function App() {
     }
   };
 
-  const handleAiReportGenerate = async () => {
+  const handleAiReportGenerate = async (isAuto = false) => {
+    if (aiReportLoading) return;
+    const reportKey = buildReportKey();
+    const resumeReady = !!resumeText.trim() || resumeSkills.length > 0;
     if (aiParserMode !== 'openai') {
-      setAiReportStatus('AI analysis requires OpenAI mode. Switch to OpenAI API key.');
+      if (!isAuto) {
+        setAiReportStatus('AI analysis requires OpenAI mode. Switch to OpenAI API key.');
+      }
       return;
     }
     if (!aiApiKey.trim()) {
-      setAiReportStatus('Add your OpenAI API key to run AI analysis.');
+      if (!isAuto) {
+        setAiReportStatus('Add your OpenAI API key to run AI analysis.');
+      }
       return;
     }
-    if (!resumeText.trim() && !resumeFilePayload?.data) {
-      setAiReportStatus('Upload a resume to generate AI analysis.');
+    if (!resumeReady) {
+      if (!isAuto) {
+        setAiReportStatus('Upload a resume to generate AI analysis.');
+      }
       return;
     }
+    if (isAuto && reportKey === lastAiReportKey) return;
 
     setAiReportStatus('Running AI analysis agents...');
     setAiReportLoading(true);
@@ -761,11 +802,14 @@ export default function App() {
       });
       setAiReport(analysis);
       setAiReportUpdatedAt(Date.now());
+      setLastAiReportKey(reportKey);
       setAiReportStatus('AI analysis ready.');
     } catch (error) {
-      setAiReportStatus(
-        error instanceof Error ? error.message : 'AI analysis failed. Try again.'
-      );
+      if (!isAuto) {
+        setAiReportStatus(
+          error instanceof Error ? error.message : 'AI analysis failed. Try again.'
+        );
+      }
     } finally {
       setAiReportLoading(false);
     }

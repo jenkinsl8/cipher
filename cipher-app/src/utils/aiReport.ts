@@ -230,69 +230,6 @@ const networkReportSchema = {
   ],
 };
 
-const cipherReportSchema = {
-  name: 'cipher_report',
-  schema: {
-    type: 'object',
-    additionalProperties: false,
-    properties: {
-      marketSnapshot: reportSectionSchema,
-      skillsPortfolio: { type: 'array', items: skillInsightSchema },
-      aiResilience: reportSectionSchema,
-      aiForward: reportSectionSchema,
-      demographicStrategy: reportSectionSchema,
-      careerInsights: reportSectionSchema,
-      careerPaths: { type: 'array', items: careerPathTierSchema },
-      learningRoadmap: reportSectionSchema,
-      skillsGapResources: reportSectionSchema,
-      competencyMilestones: reportSectionSchema,
-      projectsToPursue: reportSectionSchema,
-      earningsMaximization: reportSectionSchema,
-      opportunityMap: reportSectionSchema,
-      gapAnalysis: reportSectionSchema,
-      geographicOptions: reportSectionSchema,
-      internationalPlan: {
-        anyOf: [reportSectionSchema, { type: 'null' }],
-      },
-      entrepreneurshipPlan: {
-        anyOf: [reportSectionSchema, { type: 'null' }],
-      },
-      resumeAnalysis: {
-        anyOf: [resumeAnalysisSchema, { type: 'null' }],
-      },
-      actionPlan: reportSectionSchema,
-      marketOutlook: reportSectionSchema,
-      networkReport: {
-        anyOf: [networkReportSchema, { type: 'null' }],
-      },
-    },
-    required: [
-      'marketSnapshot',
-      'skillsPortfolio',
-      'aiResilience',
-      'aiForward',
-      'demographicStrategy',
-      'careerInsights',
-      'careerPaths',
-      'learningRoadmap',
-      'skillsGapResources',
-      'competencyMilestones',
-      'projectsToPursue',
-      'earningsMaximization',
-      'opportunityMap',
-      'gapAnalysis',
-      'geographicOptions',
-      'internationalPlan',
-      'entrepreneurshipPlan',
-      'resumeAnalysis',
-      'actionPlan',
-      'marketOutlook',
-      'networkReport',
-    ],
-  },
-  strict: true,
-};
-
 const createSection = (id: string, title: string): ReportSection => ({
   id,
   title,
@@ -355,7 +292,7 @@ export const normalizeAiReport = (payload: Partial<CipherReport>): CipherReport 
   };
 };
 
-const buildPrompt = ({
+const buildContextBlock = ({
   profile,
   resumeText,
   skills,
@@ -365,15 +302,7 @@ const buildPrompt = ({
   resumeText: string;
   skills: SkillInput[];
   connections: LinkedInConnection[];
-}) => `You are Cipher, an AI orchestrator running multiple agents (market, skills, career paths,
-network, ATS). Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD,
-LinkedIn Workforce Reports, World Bank, IMF, government labor stats, reputable salary
-surveys). Cite sources with URLs in bullets when giving market, salary, or industry claims.
-Be conservative and realistic. If data is unknown, state assumptions and what to verify.
-
-Output must be valid JSON that matches the schema.
-
-User profile:
+}) => `User profile:
 ${JSON.stringify(profile, null, 2)}
 
 Resume text (may be truncated):
@@ -391,8 +320,164 @@ ${JSON.stringify(
 )}
 
 LinkedIn connections sample:
-${JSON.stringify(connections, null, 2)}
-`;
+${JSON.stringify(connections, null, 2)}`;
+
+const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD,
+LinkedIn Workforce Reports, World Bank, IMF, government labor stats, reputable salary surveys).
+Always cite sources with URLs in bullets when giving market, salary, or industry claims.
+Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
+
+const callAgent = async <T>({
+  apiKey,
+  model,
+  baseUrl,
+  schemaName,
+  schema,
+  systemPrompt,
+  userPrompt,
+}: {
+  apiKey: string;
+  model: string;
+  baseUrl: string;
+  schemaName: string;
+  schema: object;
+  systemPrompt: string;
+  userPrompt: string;
+}): Promise<T> => {
+  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      temperature: 0.2,
+      response_format: {
+        type: 'json_schema',
+        json_schema: {
+          name: schemaName,
+          schema,
+          strict: true,
+        },
+      },
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt,
+        },
+        {
+          role: 'user',
+          content: userPrompt,
+        },
+      ],
+    }),
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`AI agent failed (${response.status}): ${errorText}`);
+  }
+
+  const data = await response.json();
+  const content = data.choices?.[0]?.message?.content || '';
+  if (!content) {
+    throw new Error('AI agent returned empty response.');
+  }
+
+  const parsed = extractJsonFromText(content);
+  if (!parsed) {
+    throw new Error('AI agent returned invalid JSON.');
+  }
+
+  return parsed as T;
+};
+
+const marketAgentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    marketSnapshot: reportSectionSchema,
+    marketOutlook: reportSectionSchema,
+    geographicOptions: reportSectionSchema,
+    internationalPlan: {
+      anyOf: [reportSectionSchema, { type: 'null' }],
+    },
+  },
+  required: ['marketSnapshot', 'marketOutlook', 'geographicOptions', 'internationalPlan'],
+};
+
+const skillsAgentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    skillsPortfolio: { type: 'array', items: skillInsightSchema },
+    aiResilience: reportSectionSchema,
+    competencyMilestones: reportSectionSchema,
+    skillsGapResources: reportSectionSchema,
+    learningRoadmap: reportSectionSchema,
+    projectsToPursue: reportSectionSchema,
+  },
+  required: [
+    'skillsPortfolio',
+    'aiResilience',
+    'competencyMilestones',
+    'skillsGapResources',
+    'learningRoadmap',
+    'projectsToPursue',
+  ],
+};
+
+const careerAgentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    aiForward: reportSectionSchema,
+    careerInsights: reportSectionSchema,
+    careerPaths: { type: 'array', items: careerPathTierSchema },
+    earningsMaximization: reportSectionSchema,
+    opportunityMap: reportSectionSchema,
+    actionPlan: reportSectionSchema,
+    gapAnalysis: reportSectionSchema,
+    demographicStrategy: reportSectionSchema,
+    entrepreneurshipPlan: {
+      anyOf: [reportSectionSchema, { type: 'null' }],
+    },
+  },
+  required: [
+    'aiForward',
+    'careerInsights',
+    'careerPaths',
+    'earningsMaximization',
+    'opportunityMap',
+    'actionPlan',
+    'gapAnalysis',
+    'demographicStrategy',
+    'entrepreneurshipPlan',
+  ],
+};
+
+const atsAgentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    resumeAnalysis: {
+      anyOf: [resumeAnalysisSchema, { type: 'null' }],
+    },
+  },
+  required: ['resumeAnalysis'],
+};
+
+const networkAgentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    networkReport: {
+      anyOf: [networkReportSchema, { type: 'null' }],
+    },
+  },
+  required: ['networkReport'],
+};
 
 export const parseCipherReportWithOpenAI = async ({
   apiKey,
@@ -415,54 +500,87 @@ export const parseCipherReportWithOpenAI = async ({
   const truncatedResume =
     trimmedResume.length > 8000 ? `${trimmedResume.slice(0, 8000)}\n...[truncated]` : trimmedResume;
   const limitedConnections = connections.slice(0, 60);
-
-  const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model,
-      temperature: 0.2,
-      response_format: {
-        type: 'json_schema',
-        json_schema: cipherReportSchema,
-      },
-      messages: [
-        {
-          role: 'system',
-          content:
-            'You are Cipher. Produce a comprehensive, cited career analysis report.',
-        },
-        {
-          role: 'user',
-          content: buildPrompt({
-            profile,
-            resumeText: truncatedResume,
-            skills,
-            connections: limitedConnections,
-          }),
-        },
-      ],
-    }),
+  const contextBlock = buildContextBlock({
+    profile,
+    resumeText: truncatedResume,
+    skills,
+    connections: limitedConnections,
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`AI report failed (${response.status}): ${errorText}`);
-  }
+  const [marketData, skillsData, careerData, atsData, networkData] = await Promise.all([
+    callAgent<Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>>(
+      {
+        apiKey,
+        model,
+        baseUrl,
+        schemaName: 'market_agent',
+        schema: marketAgentSchema,
+        systemPrompt:
+          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n` +
+          `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
+          `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
+        userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
+      }
+    ),
+    callAgent<Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>>(
+      {
+        apiKey,
+        model,
+        baseUrl,
+        schemaName: 'skills_agent',
+        schema: skillsAgentSchema,
+        systemPrompt:
+          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n` +
+          `Return skillsPortfolio, aiResilience, competencyMilestones, skillsGapResources, ` +
+          `learningRoadmap, and projectsToPursue. Use ids: ai-resilience, competency-milestones, ` +
+          `skills-gap-resources, learning-roadmap, projects-to-pursue.`,
+        userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
+      }
+    ),
+    callAgent<Pick<CipherReport, 'aiForward' | 'careerInsights' | 'careerPaths' | 'earningsMaximization' | 'opportunityMap' | 'actionPlan' | 'gapAnalysis' | 'demographicStrategy' | 'entrepreneurshipPlan'>>(
+      {
+        apiKey,
+        model,
+        baseUrl,
+        schemaName: 'career_agent',
+        schema: careerAgentSchema,
+        systemPrompt:
+          `You are Atlas, a career path strategist.\n${sourceRules}\n` +
+          `Return aiForward, careerInsights, careerPaths (Traditional/Alternate/Moonshot), ` +
+          `earningsMaximization, opportunityMap, actionPlan, gapAnalysis, demographicStrategy, ` +
+          `and entrepreneurshipPlan. Use ids: ai-forward, career-insights, earnings-maximization, ` +
+          `opportunity-map, action-plan, gap-analysis, demographic-strategy, entrepreneurship-plan.`,
+        userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
+      }
+    ),
+    callAgent<Pick<CipherReport, 'resumeAnalysis'>>({
+      apiKey,
+      model,
+      baseUrl,
+      schemaName: 'ats_agent',
+      schema: atsAgentSchema,
+      systemPrompt:
+        `You are an ATS analyst.\n${sourceRules}\nReturn resumeAnalysis (or null if no resume text).`,
+      userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
+    }),
+    callAgent<Pick<CipherReport, 'networkReport'>>({
+      apiKey,
+      model,
+      baseUrl,
+      schemaName: 'network_agent',
+      schema: networkAgentSchema,
+      systemPrompt:
+        `You are Nexus, a networking strategy analyst.\n${sourceRules}\n` +
+        `Return networkReport or null if there are no connections.`,
+      userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
+    }),
+  ]);
 
-  const data = await response.json();
-  const content = data.choices?.[0]?.message?.content || '';
-  if (!content) {
-    throw new Error('AI report returned empty response.');
-  }
-
-  const parsed = extractJsonFromText(content);
-  if (!parsed) {
-    throw new Error('AI report returned invalid JSON.');
-  }
-
-  return normalizeAiReport(parsed as CipherReport);
+  return normalizeAiReport({
+    ...marketData,
+    ...skillsData,
+    ...careerData,
+    ...atsData,
+    ...networkData,
+  });
 };
