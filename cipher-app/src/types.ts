@@ -145,6 +145,7 @@ export type NetworkReport = {
 export type ResumeAnalysis = {
   atsScore: number;
   atsReadiness: 'Low' | 'Moderate' | 'High';
+  atsSummary: string;
   wordCount: number;
   keywordCoverage: number;
   sectionsPresent: string[];

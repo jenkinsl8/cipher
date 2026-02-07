@@ -411,6 +411,13 @@ const buildResumeAnalysis = (
   if (hasTables) flags.push('Potential table or column formatting detected.');
   if (missingSections.length) flags.push('Missing standard headings.');
 
+  const atsSummary =
+    atsReadiness === 'High'
+      ? 'Likely to pass most ATS scans with minor optimizations.'
+      : atsReadiness === 'Moderate'
+        ? 'May pass some ATS scans, but improvements are recommended.'
+        : 'Unlikely to pass most ATS scans without significant formatting changes.';
+
   const recommendations = [
     'Use a single-column layout with standard headings (Summary, Experience, Education, Skills).',
     'Ensure each role has dates, location, and measurable outcomes.',
@@ -422,6 +429,7 @@ const buildResumeAnalysis = (
   return {
     atsScore,
     atsReadiness,
+    atsSummary,
     wordCount,
     keywordCoverage: Math.round(keywordCoverage * 100),
     sectionsPresent,

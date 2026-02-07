@@ -1358,12 +1358,13 @@ export default function App() {
               <ReportSectionBody section={report.marketOutlook} />
             </CollapsibleCard>
 
-            {report.resumeAnalysis ? (
-              <CollapsibleCard title="Resume ATS Scan">
+          {report.resumeAnalysis ? (
+            <CollapsibleCard title="Resume ATS Scan">
                 <Text style={styles.reportText}>
                   ATS score: {report.resumeAnalysis.atsScore} (
                   {report.resumeAnalysis.atsReadiness})
                 </Text>
+              <Text style={styles.reportText}>{report.resumeAnalysis.atsSummary}</Text>
                 <Text style={styles.reportMeta}>
                   Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
                   {report.resumeAnalysis.keywordCoverage}%
@@ -1398,12 +1399,22 @@ export default function App() {
                     ))}
                   </>
                 ) : null}
-                <Text style={styles.reportSubheading}>Recommendations</Text>
+              <Text style={styles.reportSubheading}>Recommendations</Text>
                 {report.resumeAnalysis.recommendations.map((item) => (
                   <Text key={item} style={styles.reportBullet}>
                     - {item}
                   </Text>
                 ))}
+              {report.resumeAnalysis.atsReadiness !== 'High' ? (
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={() => scrollToSection('resume-analysis')}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    View detailed resume analysis
+                  </Text>
+                </Pressable>
+              ) : null}
               </CollapsibleCard>
             ) : null}
 
@@ -1487,13 +1498,40 @@ export default function App() {
               </CollapsibleCard>
             ) : null}
           </Section>
-        ) : (
-          <Section title="Detailed Report" subtitle="Hidden for readability.">
-            <Text style={styles.helper}>
-              Use the dashboard to open the detailed report when you need the full output.
-            </Text>
+          ) : (
+            <Section title="Detailed Report" subtitle="Hidden for readability.">
+              <Text style={styles.helper}>
+                Use the dashboard to open the detailed report when you need the full output.
+              </Text>
+            </Section>
+          )}
+        {showDetailedReport ? (
+          <Section
+            title="Resume Format & Wording Analysis"
+            subtitle="Deep dive into structure, wording, and ATS blockers."
+            sectionId="resume-analysis"
+            onLayout={handleSectionLayout}
+          >
+            <CollapsibleCard title="ATS formatting risks" defaultCollapsed={false}>
+              {report.resumeAnalysis?.flags.length ? (
+                report.resumeAnalysis.flags.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))
+              ) : (
+                <Text style={styles.reportText}>No ATS risk flags detected.</Text>
+              )}
+            </CollapsibleCard>
+            <CollapsibleCard title="Format and wording recommendations" defaultCollapsed={false}>
+              {report.resumeAnalysis?.recommendations.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+            </CollapsibleCard>
           </Section>
-        )}
+        ) : null}
         </ScrollView>
       </View>
     </SafeAreaView>
