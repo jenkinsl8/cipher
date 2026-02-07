@@ -62,6 +62,7 @@ const initialProfile: UserProfile = {
 const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
 const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
 const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
+const FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
@@ -183,6 +184,7 @@ export default function App() {
     mimeType: string;
     data: string;
   } | null>(null);
+  const [linkedInUploadedAt, setLinkedInUploadedAt] = useState<number | null>(null);
   const [linkedInAiStatus, setLinkedInAiStatus] = useState('');
   const [linkedInAiEnabled, setLinkedInAiEnabled] = useState(true);
   const [showDetailedReport, setShowDetailedReport] = useState(false);
@@ -194,6 +196,7 @@ export default function App() {
     mimeType: string;
     data: string;
   } | null>(null);
+  const [resumeUploadedAt, setResumeUploadedAt] = useState<number | null>(null);
   const [aiModel, setAiModel] = useState('gpt-4o');
   const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com');
   const [aiApiKey, setAiApiKey] = useState('');
@@ -255,6 +258,9 @@ export default function App() {
     }
   };
 
+  const formatExpiryDate = (uploadedAt: number) =>
+    new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
+
   const missingFields = useMemo(() => {
     const missing: string[] = [];
     if (!resumeText.trim() && !resumeFilePayload?.data) missing.push('Resume upload');
@@ -274,6 +280,44 @@ export default function App() {
     setUseAiParser(false);
     setLastAutoParsed('');
   }, [resumeText]);
+
+  useEffect(() => {
+    if (!resumeUploadedAt || !resumeFilePayload) return;
+    const expireAt = resumeUploadedAt + FILE_TTL_MS;
+    const now = Date.now();
+    if (now >= expireAt) {
+      setResumeFilePayload(null);
+      setResumeFileName('');
+      setResumeUploadedAt(null);
+      setResumeStatus('Resume file expired after 7 days. Re-upload to refresh.');
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setResumeFilePayload(null);
+      setResumeFileName('');
+      setResumeUploadedAt(null);
+      setResumeStatus('Resume file expired after 7 days. Re-upload to refresh.');
+    }, expireAt - now);
+    return () => clearTimeout(timeout);
+  }, [resumeUploadedAt, resumeFilePayload]);
+
+  useEffect(() => {
+    if (!linkedInUploadedAt || !linkedInFilePayload) return;
+    const expireAt = linkedInUploadedAt + FILE_TTL_MS;
+    const now = Date.now();
+    if (now >= expireAt) {
+      setLinkedInFilePayload(null);
+      setLinkedInUploadedAt(null);
+      setLinkedInStatus('LinkedIn file expired after 7 days. Re-upload to refresh.');
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setLinkedInFilePayload(null);
+      setLinkedInUploadedAt(null);
+      setLinkedInStatus('LinkedIn file expired after 7 days. Re-upload to refresh.');
+    }, expireAt - now);
+    return () => clearTimeout(timeout);
+  }, [linkedInUploadedAt, linkedInFilePayload]);
 
   useEffect(() => {
     setLinkedInStatus('');
@@ -318,6 +362,7 @@ export default function App() {
         mimeType: asset.mimeType || 'application/octet-stream',
         data: base64,
       });
+      setLinkedInUploadedAt(Date.now());
       setLinkedInStatus('LinkedIn file uploaded. Parsing with AI agent...');
     } catch (error) {
       setLinkedInStatus('Could not load the LinkedIn file.');
@@ -416,6 +461,7 @@ export default function App() {
             mimeType: mimeType || 'application/pdf',
             data: normalized,
           });
+          setResumeUploadedAt(Date.now());
           const content = await extractTextFromPdfBinary(binary);
           if (content) {
             setResumeText(content);
@@ -460,6 +506,7 @@ export default function App() {
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
             data: normalized,
           });
+          setResumeUploadedAt(Date.now());
           const content = await extractTextFromDocxBinary(binary);
           if (content) {
             setResumeText(content);
@@ -498,6 +545,7 @@ export default function App() {
             mimeType: mimeType || 'application/msword',
             data: normalized,
           });
+          setResumeUploadedAt(Date.now());
           const content = await extractTextFromDocBinary(binary);
           if (content) {
             setResumeText(content);
@@ -539,6 +587,7 @@ export default function App() {
         mimeType: mimeType || 'text/plain',
         data: normalized,
       });
+      setResumeUploadedAt(Date.now());
       setResumeText(content);
       setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
     } catch (error) {
@@ -795,6 +844,11 @@ export default function App() {
           </Pressable>
           {resumeFileName ? (
             <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
+          ) : null}
+          {resumeUploadedAt ? (
+            <Text style={styles.helper}>
+              File expires on {formatExpiryDate(resumeUploadedAt)}.
+            </Text>
           ) : null}
           {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
           {resumeExtraction.warnings.length && resumeText.trim() ? (
@@ -1076,6 +1130,11 @@ export default function App() {
             </Text>
           ) : null}
           {linkedInStatus ? <Text style={styles.helper}>{linkedInStatus}</Text> : null}
+          {linkedInUploadedAt ? (
+            <Text style={styles.helper}>
+              File expires on {formatExpiryDate(linkedInUploadedAt)}.
+            </Text>
+          ) : null}
           {linkedInAiStatus ? <Text style={styles.helper}>{linkedInAiStatus}</Text> : null}
           <ToggleRow
             label="Enable LinkedIn AI agent"
