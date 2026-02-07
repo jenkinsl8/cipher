@@ -120,7 +120,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       resumeText: '',
       file: {
         name: 'resume.docx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        mimeType: undefined,
         data: 'ZG9jeA==',
       },
     });

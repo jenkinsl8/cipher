@@ -90,6 +90,29 @@ const parseJsonSafely = (value: string) => {
   }
 };
 
+const inferMimeType = (file: { name?: string; mimeType?: string }) => {
+  const provided = file.mimeType?.trim();
+  if (provided && provided.includes('/')) return provided;
+  const name = file.name?.toLowerCase() || '';
+  const extension = name.split('.').pop() || '';
+  switch (extension) {
+    case 'pdf':
+      return 'application/pdf';
+    case 'docx':
+      return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+    case 'doc':
+      return 'application/msword';
+    case 'rtf':
+      return 'application/rtf';
+    case 'md':
+      return 'text/markdown';
+    case 'txt':
+      return 'text/plain';
+    default:
+      return 'application/octet-stream';
+  }
+};
+
 const extractJsonFromText = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
@@ -223,7 +246,10 @@ ${resumeText}`;
   };
 
   if (file?.data) {
-    const fileData = `data:${file.mimeType || 'application/pdf'};base64,${file.data}`;
+    const mimeType = inferMimeType(file);
+    const fileData = file.data.startsWith('data:')
+      ? file.data
+      : `data:${mimeType};base64,${file.data}`;
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
       method: 'POST',
       headers,
