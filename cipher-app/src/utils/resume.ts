@@ -12,126 +12,7 @@ const HEADING_MAP: { key: string; labels: string[] }[] = [
   { key: 'volunteer', labels: ['volunteer', 'community'] },
 ];
 
-const CATEGORY_KEYWORDS: Record<SkillCategory, string[]> = {
-  technical: [
-    'python',
-    'sql',
-    'javascript',
-    'typescript',
-    'cloud',
-    'aws',
-    'azure',
-    'gcp',
-    'kubernetes',
-    'devops',
-    'automation',
-    'machine learning',
-    'ai',
-    'data engineering',
-  ],
-  'soft/interpersonal': [
-    'communication',
-    'collaboration',
-    'stakeholder',
-    'negotiation',
-    'presentation',
-    'relationship',
-    'customer',
-    'sales',
-    'influence',
-  ],
-  leadership: [
-    'leadership',
-    'strategy',
-    'management',
-    'mentorship',
-    'vision',
-    'roadmap',
-    'executive',
-  ],
-  analytical: ['analysis', 'analytics', 'data', 'research', 'modeling', 'forecasting'],
-  creative: ['design', 'ux', 'ui', 'copywriting', 'content', 'brand', 'creative'],
-  'domain-specific': [
-    'finance',
-    'fintech',
-    'healthcare',
-    'legal',
-    'compliance',
-    'security',
-    'hr',
-    'operations',
-    'product',
-    'marketing',
-  ],
-};
-
-const INDUSTRY_KEYWORDS: { industry: string; keywords: string[] }[] = [
-  { industry: 'Fintech', keywords: ['fintech', 'bank', 'payments', 'lending', 'finance'] },
-  { industry: 'Healthcare', keywords: ['healthcare', 'clinical', 'hospital', 'medical'] },
-  { industry: 'SaaS', keywords: ['saas', 'software', 'subscription'] },
-  { industry: 'E-commerce', keywords: ['e-commerce', 'ecommerce', 'retail'] },
-  { industry: 'Education', keywords: ['education', 'edtech', 'learning'] },
-  { industry: 'Cybersecurity', keywords: ['security', 'cyber', 'risk', 'compliance'] },
-  { industry: 'Marketing', keywords: ['marketing', 'growth', 'brand', 'content'] },
-  { industry: 'Logistics', keywords: ['logistics', 'supply chain', 'operations'] },
-];
-
-const HARD_SKILL_KEYWORDS = [
-  'project management',
-  'program management',
-  'product management',
-  'data analysis',
-  'analytics',
-  'sql',
-  'python',
-  'excel',
-  'agile',
-  'scrum',
-  'roadmapping',
-  'go-to-market',
-  'user research',
-  'machine learning',
-  'ai',
-  'cloud',
-  'devops',
-  'security',
-  'compliance',
-  'finance',
-  'budgeting',
-  'forecasting',
-  'operations',
-  'marketing',
-  'design',
-  'ux',
-  'research',
-  'content strategy',
-  'copywriting',
-  'sales',
-  'hr',
-  'recruiting',
-];
-
-const SOFT_SKILL_KEYWORDS = [
-  'communication',
-  'collaboration',
-  'leadership',
-  'stakeholder management',
-  'strategic planning',
-  'negotiation',
-  'mentorship',
-  'coaching',
-  'conflict resolution',
-  'presentation',
-  'relationship building',
-  'customer success',
-  'team leadership',
-  'executive influence',
-  'change management',
-  'problem solving',
-  'critical thinking',
-];
-
-const SKILL_KEYWORDS = [...HARD_SKILL_KEYWORDS, ...SOFT_SKILL_KEYWORDS];
+const DEFAULT_SKILL_CATEGORY: SkillCategory = 'domain-specific';
 
 const normalizeLine = (line: string) => line.trim().replace(/\s+/g, ' ');
 
@@ -267,26 +148,6 @@ const extractRoleFromLine = (line: string) => {
   return withoutDates;
 };
 
-const INFERRED_SOFT_SKILLS: { pattern: RegExp; skills: string[] }[] = [
-  { pattern: /lead|led|manage|managed|director|vp|head|chief|principal/i, skills: ['leadership', 'team leadership', 'coaching'] },
-  { pattern: /stakeholder|cross-functional|partnered|collaborat/i, skills: ['stakeholder management', 'collaboration'] },
-  { pattern: /present|presentation|public speaking|briefed|communicat/i, skills: ['public speaking', 'communication', 'presentation'] },
-  { pattern: /facilitat|workshop|alignment/i, skills: ['facilitation', 'consensus building'] },
-  { pattern: /negotiat|contract|vendor|procurement/i, skills: ['negotiation', 'vendor management'] },
-  { pattern: /mentor|coach|train/i, skills: ['mentorship', 'coaching'] },
-];
-
-const inferSkillsFromExperience = (experienceLines: string[]) => {
-  const inferred: string[] = [];
-  const joined = experienceLines.join(' ');
-  INFERRED_SOFT_SKILLS.forEach((rule) => {
-    if (rule.pattern.test(joined)) {
-      inferred.push(...rule.skills);
-    }
-  });
-  return inferred;
-};
-
 const extractYearsExperience = (text: string) => {
   const yearMatches = text.match(/\b(19|20)\d{2}\b/g) || [];
   const years = yearMatches.map((value) => Number(value)).filter((value) => value > 1900);
@@ -313,41 +174,15 @@ const toTitleCase = (value: string) =>
     .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
     .join(' ');
 
-const categorizeSkill = (name: string): SkillCategory => {
-  const lower = name.toLowerCase();
-  let bestCategory: SkillCategory = 'domain-specific';
-  let bestScore = 0;
-
-  (Object.keys(CATEGORY_KEYWORDS) as SkillCategory[]).forEach((category) => {
-    const score = CATEGORY_KEYWORDS[category].filter((keyword) => lower.includes(keyword))
-      .length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestCategory = category;
-    }
-  });
-
-  return bestCategory;
-};
-
 export const buildSkillInputsFromNames = (skills: string[]): SkillInput[] =>
   skills.map((skill, index) => ({
     id: `resume-${index}-${skill.toLowerCase().replace(/\s+/g, '-')}`,
     name: toTitleCase(skill),
-    category: categorizeSkill(skill),
+    category: DEFAULT_SKILL_CATEGORY,
     years: 1,
     evidence: '',
     enjoyment: 3,
   }));
-
-const extractIndustries = (text: string) => {
-  const lower = text.toLowerCase();
-  const matches = INDUSTRY_KEYWORDS.filter((entry) =>
-    entry.keywords.some((keyword) => lower.includes(keyword))
-  ).map((entry) => entry.industry);
-
-  return Array.from(new Set(matches));
-};
 
 export const parseResume = (text: string): ResumeExtraction => {
   const trimmed = text.trim();
@@ -395,17 +230,9 @@ export const parseResume = (text: string): ResumeExtraction => {
     : '';
   if (certifications) profile.certifications = certifications;
 
-  const industries = extractIndustries(trimmed);
-  if (industries.length) profile.industries = industries.join(', ');
-
-  const inferredFromExperience = inferSkillsFromExperience(experienceLines);
   const skillLines = sections.skills || [];
   const skillTokens = parseSkillsFromLines(skillLines).map((skill) => skill.toLowerCase());
-  const lowerText = trimmed.toLowerCase();
-  const matchedKeywords = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
-  const extractedSkills = Array.from(
-    new Set([...skillTokens, ...matchedKeywords, ...inferredFromExperience])
-  );
+  const extractedSkills = Array.from(new Set([...skillTokens]));
 
   const skills = buildSkillInputsFromNames(extractedSkills);
   const warnings: string[] = [];
@@ -413,19 +240,6 @@ export const parseResume = (text: string): ResumeExtraction => {
   if (!currentRole) warnings.push('Could not detect current role from resume.');
   if (!education) warnings.push('Could not detect education section from resume.');
   if (!skills.length) warnings.push('No skills detected. Ensure your resume lists skills.');
-
-  const hasSoftSkill = SOFT_SKILL_KEYWORDS.some((keyword) =>
-    extractedSkills.some((skill) => skill.includes(keyword))
-  );
-  const hasHardSkill = HARD_SKILL_KEYWORDS.some((keyword) =>
-    extractedSkills.some((skill) => skill.includes(keyword))
-  );
-  if (!hasSoftSkill) {
-    warnings.push('No soft skills detected. Add leadership or communication skills.');
-  }
-  if (!hasHardSkill) {
-    warnings.push('No technical skills detected. Add tools, platforms, or systems.');
-  }
 
   return {
     profile,

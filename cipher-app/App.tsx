@@ -16,7 +16,6 @@ import {
   View,
 } from 'react-native';
 
-import { generateCipherReport } from './src/engine/cipherEngine';
 import { parseLinkedInConnections } from './src/utils/csv';
 import { parseLinkedInWithOpenAI } from './src/utils/linkedInParser';
 import {
@@ -29,14 +28,15 @@ import {
   parseResumeWithOpenAI,
   parseResumeWithServerless,
 } from './src/utils/aiResumeParser';
+import { createEmptyReport, parseCipherReportWithOpenAI } from './src/utils/aiReport';
 import {
   AILiteracy,
   CareerGoal,
+  CipherReport,
   RiskTolerance,
   UserProfile,
   ResumeExtraction,
 } from './src/types';
-import { getMarketSnapshotForLocation } from './src/utils/market';
 
 const initialProfile: UserProfile = {
   name: '',
@@ -211,6 +211,10 @@ export default function App() {
   const [useAiParser, setUseAiParser] = useState(false);
   const [autoParseEnabled, setAutoParseEnabled] = useState(true);
   const [lastAutoParsed, setLastAutoParsed] = useState('');
+  const [aiReport, setAiReport] = useState<CipherReport | null>(null);
+  const [aiReportStatus, setAiReportStatus] = useState('');
+  const [aiReportUpdatedAt, setAiReportUpdatedAt] = useState<number | null>(null);
+  const [aiReportLoading, setAiReportLoading] = useState(false);
   const [agentQuestion, setAgentQuestion] = useState('');
   const [agentThread, setAgentThread] = useState<
     Array<{ role: 'user' | 'assistant'; content: string }>
@@ -242,25 +246,21 @@ export default function App() {
     () => mergeProfile(resumeExtraction.profile, profile),
     [profile, resumeExtraction.profile]
   );
-  const report = useMemo(
-    () =>
-      generateCipherReport(
-        mergedProfile,
-        resumeSkills,
-        getMarketSnapshotForLocation(mergedProfile.location || ''),
-        connections,
-        resumeText
-      ),
-    [mergedProfile, resumeSkills, connections, resumeText]
-  );
+  const emptyReport = useMemo(() => createEmptyReport(), []);
+  const report = aiReport || emptyReport;
+  const hasAiReport = !!aiReport;
 
   const highRiskCount = report.skillsPortfolio.filter((skill) =>
     skill.aiRisk === 'High' || skill.aiRisk === 'Very High'
   ).length;
-  const aiRiskLabel = highRiskCount
-    ? `${highRiskCount} high-risk skills`
-    : 'Low AI risk';
-  const marketSignal = report.marketSnapshot.indicators || report.marketSnapshot.summary;
+  const aiRiskLabel = hasAiReport
+    ? highRiskCount
+      ? `${highRiskCount} high-risk skills`
+      : 'No high-risk skills detected'
+    : 'Run AI analysis';
+  const marketSignal = hasAiReport
+    ? report.marketSnapshot.summary || 'AI market snapshot ready'
+    : 'Run AI analysis';
 
   const handleSectionLayout = (sectionId: string, y: number) => {
     sectionPositions.current[sectionId] = y;
@@ -286,6 +286,8 @@ export default function App() {
 
   const formatExpiryDate = (uploadedAt: number) =>
     new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
+  const formatTimestamp = (timestamp: number) =>
+    new Date(timestamp).toISOString().replace('T', ' ').slice(0, 16);
 
   const missingFields = useMemo(() => {
     const missing: string[] = [];
@@ -297,14 +299,18 @@ export default function App() {
     if (!profile.raceEthnicity.trim()) missing.push('Race/ethnicity');
     if (resumeSkills.length === 0 && !resumeFilePayload?.data)
       missing.push('Skills in resume');
+    if (!hasAiReport) missing.push('Run AI analysis');
     return missing;
-  }, [profile, mergedProfile, resumeSkills, resumeText, resumeFilePayload]);
+  }, [profile, mergedProfile, resumeSkills, resumeText, resumeFilePayload, hasAiReport]);
 
   useEffect(() => {
     setAiResumeExtraction(null);
     setAiStatus('');
     setUseAiParser(false);
     setLastAutoParsed('');
+    setAiReport(null);
+    setAiReportUpdatedAt(null);
+    setAiReportStatus('');
   }, [resumeText]);
 
   useEffect(() => {
@@ -727,6 +733,44 @@ export default function App() {
     }
   };
 
+  const handleAiReportGenerate = async () => {
+    if (aiParserMode !== 'openai') {
+      setAiReportStatus('AI analysis requires OpenAI mode. Switch to OpenAI API key.');
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      setAiReportStatus('Add your OpenAI API key to run AI analysis.');
+      return;
+    }
+    if (!resumeText.trim() && !resumeFilePayload?.data) {
+      setAiReportStatus('Upload a resume to generate AI analysis.');
+      return;
+    }
+
+    setAiReportStatus('Running AI analysis agents...');
+    setAiReportLoading(true);
+    try {
+      const analysis = await parseCipherReportWithOpenAI({
+        apiKey: aiApiKey.trim(),
+        model: aiModel.trim() || 'gpt-4o',
+        baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
+        profile: mergedProfile,
+        resumeText,
+        skills: resumeSkills,
+        connections,
+      });
+      setAiReport(analysis);
+      setAiReportUpdatedAt(Date.now());
+      setAiReportStatus('AI analysis ready.');
+    } catch (error) {
+      setAiReportStatus(
+        error instanceof Error ? error.message : 'AI analysis failed. Try again.'
+      );
+    } finally {
+      setAiReportLoading(false);
+    }
+  };
+
   const handleAgentChat = async () => {
     const question = agentQuestion.trim();
     if (!question) {
@@ -742,19 +786,21 @@ export default function App() {
       return;
     }
 
+    const topSkills =
+      report.skillsPortfolio.length > 0
+        ? report.skillsPortfolio.slice(0, 3).map((skill) => skill.name).join(', ')
+        : resumeSkills.length
+          ? resumeSkills.slice(0, 3).map((skill) => skill.name).join(', ')
+          : 'Not detected';
     const context = [
       `Name: ${mergedProfile.name || 'Not provided'}`,
       `Current role: ${mergedProfile.currentRole || 'Not provided'}`,
       `Location: ${mergedProfile.location || 'Not provided'}`,
-      `Top skills: ${
-        report.skillsPortfolio.length
-          ? report.skillsPortfolio.slice(0, 3).map((skill) => skill.name).join(', ')
-          : 'Not detected'
-      }`,
+      `Top skills: ${topSkills}`,
       `Career goals: ${profile.careerGoals.join(', ') || 'Not provided'}`,
       `Risk tolerance: ${profile.riskTolerance}`,
       `AI literacy: ${profile.aiLiteracy}`,
-      `Market snapshot: ${report.marketSnapshot.summary}`,
+      `Market snapshot: ${report.marketSnapshot.summary || 'Not generated'}`,
     ].join('\n');
 
     const nextThread = [...agentThread, { role: 'user', content: question }].slice(-6);
@@ -777,7 +823,8 @@ export default function App() {
               role: 'system',
               content:
                 `You are Cipher, a career strategist. Use the profile context below. ` +
-                `Be direct, realistic, and actionable. Ask a clarifying question if needed.\n\n${context}`,
+                `Be direct, realistic, and actionable. Cite public sources with URLs ` +
+                `when referencing market or salary data. Ask a clarifying question if needed.\n\n${context}`,
             },
             ...nextThread,
           ],
@@ -820,7 +867,7 @@ export default function App() {
 
     const marketContext = [
       `Location: ${mergedProfile.location || 'Not provided'}`,
-      `Market indicators: ${report.marketSnapshot.summary}`,
+      `Market indicators: ${report.marketSnapshot.summary || 'Not generated'}`,
       `Hiring trends: ${report.marketSnapshot.bullets?.[0] || 'Not provided'}`,
       `AI trends: ${report.marketSnapshot.bullets?.[3] || 'Not provided'}`,
     ].join('\n');
@@ -845,7 +892,8 @@ export default function App() {
               role: 'system',
               content:
                 `You are Sentinel, a market conditions analyst. Use the context below. ` +
-                `Be realistic, conservative, and cite likely signals. Ask one clarifying question if needed.\n\n${marketContext}`,
+                `Be realistic, conservative, and cite public sources with URLs. ` +
+                `Ask one clarifying question if needed.\n\n${marketContext}`,
             },
             ...nextThread,
           ],
@@ -886,24 +934,24 @@ export default function App() {
       return;
     }
 
+    const topSkillsContext = report.skillsPortfolio.length
+      ? report.skillsPortfolio
+          .slice(0, 6)
+          .map((skill) => `${skill.name} (${skill.category})`)
+          .join(', ')
+      : resumeSkills.length
+        ? resumeSkills.slice(0, 6).map((skill) => skill.name).join(', ')
+        : 'Not detected';
+    const aiRiskContext = report.skillsPortfolio.length
+      ? report.skillsPortfolio
+          .slice(0, 3)
+          .map((skill) => `${skill.name}: ${skill.aiRisk}`)
+          .join('; ')
+      : 'Not available (run AI analysis).';
     const skillsContext = [
       `Current role: ${mergedProfile.currentRole || 'Not provided'}`,
-      `Top skills: ${
-        report.skillsPortfolio.length
-          ? report.skillsPortfolio
-              .slice(0, 6)
-              .map((skill) => `${skill.name} (${skill.category})`)
-              .join(', ')
-          : 'Not detected'
-      }`,
-      `AI risk highlights: ${
-        report.skillsPortfolio.length
-          ? report.skillsPortfolio
-              .slice(0, 3)
-              .map((skill) => `${skill.name}: ${skill.aiRisk}`)
-              .join('; ')
-          : 'Not detected'
-      }`,
+      `Top skills: ${topSkillsContext}`,
+      `AI risk highlights: ${aiRiskContext}`,
       `Career goals: ${profile.careerGoals.join(', ') || 'Not provided'}`,
     ].join('\n');
 
@@ -927,7 +975,8 @@ export default function App() {
               role: 'system',
               content:
                 `You are Aegis, a skills strategist. Use the context below to evaluate ` +
-                `skills, risks, and next steps. Be concise and actionable. Ask one ` +
+                `skills, risks, and next steps. Be concise and actionable. Cite public ` +
+                `sources with URLs when referencing market or salary data. Ask one ` +
                 `clarifying question if needed.\n\n${skillsContext}`,
             },
             ...nextThread,
@@ -955,21 +1004,25 @@ export default function App() {
   };
 
   const agentRoster = [
-    { name: 'Cipher', role: 'Career strategist', status: 'Active' },
+    {
+      name: 'Cipher',
+      role: 'Career strategist',
+      status: hasAiReport ? 'Synced' : 'Waiting for AI analysis',
+    },
     {
       name: 'Sentinel',
       role: 'Market conditions',
-      status: mergedProfile.location ? 'Synced' : 'Waiting for location',
+      status: hasAiReport ? 'Synced' : 'Waiting for AI analysis',
     },
     {
       name: 'Aegis',
-      role: 'AI impact',
-      status: resumeSkills.length ? 'Ready' : 'Waiting for skills',
+      role: 'Skills & AI impact',
+      status: hasAiReport ? 'Ready' : 'Waiting for AI analysis',
     },
     {
       name: 'Atlas',
       role: 'Career paths',
-      status: mergedProfile.currentRole ? 'Ready' : 'Waiting for role',
+      status: hasAiReport ? 'Ready' : 'Waiting for AI analysis',
     },
     {
       name: 'Nexus',
@@ -1009,6 +1062,15 @@ export default function App() {
                 meta={resumeFileName || 'Upload resume to begin'}
               />
               <DashboardCard
+                label="AI Analysis"
+                value={hasAiReport ? 'Generated' : 'Not run'}
+                meta={
+                  aiReportUpdatedAt
+                    ? `Updated ${formatTimestamp(aiReportUpdatedAt)}`
+                    : aiReportStatus || 'Run AI analysis'
+                }
+              />
+              <DashboardCard
                 label="AI Parser"
                 value={useAiParser ? 'AI Parsed' : 'Local Extract'}
                 meta={aiStatus || (aiParserMode === 'openai' ? 'OpenAI mode' : 'Serverless')}
@@ -1021,7 +1083,11 @@ export default function App() {
               <DashboardCard
                 label="Location"
                 value={mergedProfile.location || 'Location needed'}
-                meta={report.marketSnapshot.summary}
+                meta={
+                  hasAiReport
+                    ? report.marketSnapshot.summary || 'AI market snapshot ready'
+                    : 'Run AI analysis'
+                }
               />
             </View>
 
@@ -1034,10 +1100,13 @@ export default function App() {
                     ? `${report.resumeAnalysis.atsScore}`
                     : 'N/A'
                 }
-                meta={report.resumeAnalysis?.atsReadiness || 'Upload resume'}
+                meta={
+                  report.resumeAnalysis?.atsReadiness ||
+                  (hasAiReport ? 'ATS data missing' : 'Run AI analysis')
+                }
               />
               <KpiTile label="AI Risk" value={aiRiskLabel} meta="From skills portfolio" />
-              <KpiTile label="Market Signals" value={marketSignal} meta="Auto by location" />
+              <KpiTile label="Market Signals" value={marketSignal} meta="AI analysis" />
             </View>
 
             <Text style={styles.label}>Quick links</Text>
@@ -1048,6 +1117,19 @@ export default function App() {
               <LinkButton label="Agent Chat" onPress={() => scrollToSection('agent-chat')} />
               <LinkButton label="Detailed Report" onPress={() => scrollToSection('detailed-report')} />
             </View>
+
+            <Text style={styles.label}>AI analysis</Text>
+            <Pressable style={styles.primaryButton} onPress={handleAiReportGenerate}>
+              <Text style={styles.primaryButtonText}>
+                {aiReportLoading ? 'Running AI analysis...' : 'Run AI analysis'}
+              </Text>
+            </Pressable>
+            {aiReportUpdatedAt ? (
+              <Text style={styles.helper}>
+                Last updated {formatTimestamp(aiReportUpdatedAt)}.
+              </Text>
+            ) : null}
+            {aiReportStatus ? <Text style={styles.helper}>{aiReportStatus}</Text> : null}
 
             <Pressable
               style={styles.secondaryButton}
@@ -1374,12 +1456,17 @@ export default function App() {
 
         {showDetailedReport ? (
           <Section
-            title="Market Snapshot (Auto)"
-            subtitle="Cipher's market agent builds this from your location."
+            title="Market Snapshot (AI)"
+            subtitle="AI market agent builds this from public sources and your location."
             sectionId="market"
             onLayout={handleSectionLayout}
           >
             <ReportSectionView section={report.marketSnapshot} />
+            {!hasAiReport ? (
+              <Text style={styles.helper}>
+                Run AI analysis to generate market conditions and citations.
+              </Text>
+            ) : null}
             <Text style={styles.helper}>
               Ask Sentinel for localized market conditions, hiring signals, or trends.
             </Text>
@@ -1476,6 +1563,11 @@ export default function App() {
             sectionId="detailed-report"
             onLayout={handleSectionLayout}
           >
+            {!hasAiReport ? (
+              <Text style={styles.helper}>
+                Run AI analysis to populate the detailed report sections.
+              </Text>
+            ) : null}
             <CollapsibleCard title={report.aiResilience.title}>
               <ReportSectionBody section={report.aiResilience} />
             </CollapsibleCard>
@@ -1530,7 +1622,7 @@ export default function App() {
                 ))
               ) : (
                 <Text style={styles.helper}>
-                  Upload your resume to generate the skills portfolio.
+                  Run AI analysis to generate the skills portfolio and citations.
                 </Text>
               )}
               <Text style={styles.helper}>
@@ -1594,6 +1686,11 @@ export default function App() {
                   ) : null}
                 </View>
               ))}
+              {!report.careerPaths.length ? (
+                <Text style={styles.helper}>
+                  Run AI analysis to generate career path options.
+                </Text>
+              ) : null}
             </CollapsibleCard>
 
             <CollapsibleCard title="Career Path Plans" defaultCollapsed={false}>
@@ -1678,6 +1775,11 @@ export default function App() {
                   ))}
                 </View>
               ))}
+              {!report.careerPaths.length ? (
+                <Text style={styles.helper}>
+                  Run AI analysis to generate detailed career plans.
+                </Text>
+              ) : null}
             </CollapsibleCard>
 
             <CollapsibleCard title={report.learningRoadmap.title}>
@@ -1723,51 +1825,51 @@ export default function App() {
 
           {report.resumeAnalysis ? (
             <CollapsibleCard title="Resume ATS Scan">
-                <Text style={styles.reportText}>
-                  ATS score: {report.resumeAnalysis.atsScore} (
-                  {report.resumeAnalysis.atsReadiness})
-                </Text>
+              <Text style={styles.reportText}>
+                ATS score: {report.resumeAnalysis.atsScore} (
+                {report.resumeAnalysis.atsReadiness})
+              </Text>
               <Text style={styles.reportText}>{report.resumeAnalysis.atsSummary}</Text>
-                <Text style={styles.reportMeta}>
-                  Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
-                  {report.resumeAnalysis.keywordCoverage}%
-                </Text>
-                <Text style={styles.reportSubheading}>Sections detected</Text>
-                {report.resumeAnalysis.sectionsPresent.length ? (
-                  report.resumeAnalysis.sectionsPresent.map((item) => (
-                    <Text key={item} style={styles.reportBullet}>
-                      - {item}
-                    </Text>
-                  ))
-                ) : (
-                  <Text style={styles.reportBullet}>- None detected</Text>
-                )}
-                {report.resumeAnalysis.missingSections.length ? (
-                  <>
-                    <Text style={styles.reportSubheading}>Missing sections</Text>
-                    {report.resumeAnalysis.missingSections.map((item) => (
-                      <Text key={item} style={styles.reportBullet}>
-                        - {item}
-                      </Text>
-                    ))}
-                  </>
-                ) : null}
-                {report.resumeAnalysis.flags.length ? (
-                  <>
-                    <Text style={styles.reportSubheading}>ATS flags</Text>
-                    {report.resumeAnalysis.flags.map((item) => (
-                      <Text key={item} style={styles.reportBullet}>
-                        - {item}
-                      </Text>
-                    ))}
-                  </>
-                ) : null}
-              <Text style={styles.reportSubheading}>Recommendations</Text>
-                {report.resumeAnalysis.recommendations.map((item) => (
+              <Text style={styles.reportMeta}>
+                Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
+                {report.resumeAnalysis.keywordCoverage}%
+              </Text>
+              <Text style={styles.reportSubheading}>Sections detected</Text>
+              {report.resumeAnalysis.sectionsPresent.length ? (
+                report.resumeAnalysis.sectionsPresent.map((item) => (
                   <Text key={item} style={styles.reportBullet}>
                     - {item}
                   </Text>
-                ))}
+                ))
+              ) : (
+                <Text style={styles.reportBullet}>- None detected</Text>
+              )}
+              {report.resumeAnalysis.missingSections.length ? (
+                <>
+                  <Text style={styles.reportSubheading}>Missing sections</Text>
+                  {report.resumeAnalysis.missingSections.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+              {report.resumeAnalysis.flags.length ? (
+                <>
+                  <Text style={styles.reportSubheading}>ATS flags</Text>
+                  {report.resumeAnalysis.flags.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                </>
+              ) : null}
+              <Text style={styles.reportSubheading}>Recommendations</Text>
+              {report.resumeAnalysis.recommendations.map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
               {report.resumeAnalysis.atsReadiness !== 'High' ? (
                 <Pressable
                   style={styles.secondaryButton}
@@ -1778,8 +1880,14 @@ export default function App() {
                   </Text>
                 </Pressable>
               ) : null}
-              </CollapsibleCard>
-            ) : null}
+            </CollapsibleCard>
+          ) : (
+            <CollapsibleCard title="Resume ATS Scan">
+              <Text style={styles.helper}>
+                Run AI analysis to generate ATS scan results.
+              </Text>
+            </CollapsibleCard>
+          )}
 
             {report.networkReport ? (
               <CollapsibleCard title="LinkedIn Network Analysis">
@@ -1859,7 +1967,13 @@ export default function App() {
                   </Text>
                 ))}
               </CollapsibleCard>
-            ) : null}
+            ) : (
+              <CollapsibleCard title="LinkedIn Network Analysis">
+                <Text style={styles.helper}>
+                  Run AI analysis to generate network insights.
+                </Text>
+              </CollapsibleCard>
+            )}
           </Section>
           ) : (
             <Section title="Detailed Report" subtitle="Hidden for readability.">
@@ -1875,24 +1989,32 @@ export default function App() {
             sectionId="resume-analysis"
             onLayout={handleSectionLayout}
           >
-            <CollapsibleCard title="ATS formatting risks" defaultCollapsed={false}>
-              {report.resumeAnalysis?.flags.length ? (
-                report.resumeAnalysis.flags.map((item) => (
-                  <Text key={item} style={styles.reportBullet}>
-                    - {item}
-                  </Text>
-                ))
-              ) : (
-                <Text style={styles.reportText}>No ATS risk flags detected.</Text>
-              )}
-            </CollapsibleCard>
-            <CollapsibleCard title="Format and wording recommendations" defaultCollapsed={false}>
-              {report.resumeAnalysis?.recommendations.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-            </CollapsibleCard>
+            {!report.resumeAnalysis ? (
+              <Text style={styles.helper}>
+                Run AI analysis to generate ATS formatting risks and recommendations.
+              </Text>
+            ) : (
+              <>
+                <CollapsibleCard title="ATS formatting risks" defaultCollapsed={false}>
+                  {report.resumeAnalysis.flags.length ? (
+                    report.resumeAnalysis.flags.map((item) => (
+                      <Text key={item} style={styles.reportBullet}>
+                        - {item}
+                      </Text>
+                    ))
+                  ) : (
+                    <Text style={styles.reportText}>No ATS risk flags detected.</Text>
+                  )}
+                </CollapsibleCard>
+                <CollapsibleCard title="Format and wording recommendations" defaultCollapsed={false}>
+                  {report.resumeAnalysis.recommendations.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                </CollapsibleCard>
+              </>
+            )}
           </Section>
         ) : null}
         </ScrollView>

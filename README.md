@@ -1,9 +1,9 @@
 # Cipher Career Strategist
 
 This repository contains a cross-platform (web + mobile) Expo app that powers
-Cipher, an AI career strategist and job market analyst. The app collects user
-inputs, ranks transferable skills by market value, and generates AI impact,
-career path, and market-aware guidance.
+Cipher, an AI career strategist and job market analyst. The UI is backed by AI
+agents that generate the market, skills, salary, and career path analysis using
+public, reliable sources (with citations) instead of hardcoded data.
 
 ## Project layout
 
@@ -75,8 +75,8 @@ must also be HTTPS. Browsers block insecure (http) requests from secure pages.
 - Extracts work history, skills, and education from PDF/DOCX resumes
 - Optional AI resume parser via serverless endpoint (no API key in app) for higher accuracy
 - Collects demographics and goals for personalization
-- Builds a skills portfolio with AI impact analysis per skill
-- Produces AI-forward opportunities and learning roadmaps
+- Runs AI analysis agents for skills, market conditions, and career paths
+- Produces AI-forward opportunities and learning roadmaps with source citations
 - Supports LinkedIn Connections CSV upload for network analysis
-- Offers resume upload with ATS readiness scan and recommendations
+- Offers resume upload with AI-driven ATS readiness scan and recommendations
 - Outputs multi-tier career paths with 3-year and 5-year plans

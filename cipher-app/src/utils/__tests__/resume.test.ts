@@ -35,7 +35,7 @@ Strategic planning, data analysis, SQL`;
     );
   });
 
-  it('falls back to keyword skills when a Skills section is missing', () => {
+  it('returns no skills when a Skills section is missing', () => {
     const resume = `Jamie Smith
 james@example.com
 Experience
@@ -43,10 +43,7 @@ Program Manager - Growth Team (2017-2023)
 - Led project management initiatives and data analysis.`;
 
     const result = parseResume(resume);
-    expect(result.skills.length).toBeGreaterThan(0);
-    expect(result.skills.map((skill) => skill.name)).toEqual(
-      expect.arrayContaining(['Project Management', 'Data Analysis'])
-    );
+    expect(result.skills.length).toBe(0);
   });
 
   it('includes both soft and hard skills when available', () => {
@@ -66,7 +63,7 @@ SQL, Cloud, Leadership, Communication`;
     );
   });
 
-  it('infers soft skills from experience descriptions', () => {
+  it('does not infer skills without a Skills section', () => {
     const resume = `Morgan Reed
 Experience
 Senior Manager (2019-2024)
@@ -74,10 +71,7 @@ Senior Manager (2019-2024)
 - Presented quarterly results to executive leadership.`;
 
     const result = parseResume(resume);
-    const names = result.skills.map((skill) => skill.name);
-    expect(names).toEqual(
-      expect.arrayContaining(['Leadership', 'Facilitation', 'Public Speaking', 'Presentation'])
-    );
+    expect(result.skills.length).toBe(0);
   });
 });
 
