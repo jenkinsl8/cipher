@@ -81,6 +81,11 @@ export type SkillInsight = {
   aiTools: string[];
   transformation: string;
   humanEdge: string;
+  industryOutlook: {
+    industries: string[];
+    notes: string;
+    sources: string[];
+  };
   valueMaintenance: string[];
   aiResistantSignals: string[];
   projections: {

@@ -6,6 +6,7 @@ import {
   CATEGORY_AI_ANALYSIS,
   CATEGORY_SIGNALS,
   FORMAL_EDUCATION_OPTIONS,
+  INDUSTRY_OUTLOOK_BY_CATEGORY,
   KEYWORD_RULES,
   LOW_COST_OPTIONS,
   MARKET_VALIDATED_RESOURCES,
@@ -88,7 +89,7 @@ const resolveToolsByDomain = (skillName: string) => {
   return [];
 };
 
-const buildSkillInsight = (skill: SkillInput): SkillInsight => {
+const buildSkillInsight = (skill: SkillInput, profile?: UserProfile): SkillInsight => {
   const base = CATEGORY_SIGNALS[skill.category];
   const keywordSignals = getKeywordSignals(skill.name);
   const demand = clamp(base.demand + (keywordSignals.adjust.demand || 0));
@@ -140,6 +141,18 @@ const buildSkillInsight = (skill: SkillInput): SkillInsight => {
         : 'Skill remains valuable with emphasis on strategy and cross-domain synthesis.',
   };
 
+  const industryOutlookBase = INDUSTRY_OUTLOOK_BY_CATEGORY[skill.category];
+  const profileIndustries = profile?.industries
+    ? profile.industries.split(',').map((item) => item.trim()).filter(Boolean)
+    : [];
+  const industryOutlook = {
+    industries: Array.from(
+      new Set([...profileIndustries, ...industryOutlookBase.industries])
+    ),
+    notes: industryOutlookBase.notes,
+    sources: industryOutlookBase.sources,
+  };
+
   return {
     name: skill.name,
     category: skill.category,
@@ -156,6 +169,7 @@ const buildSkillInsight = (skill: SkillInput): SkillInsight => {
     aiTools,
     transformation: analysis.transformation,
     humanEdge: analysis.humanEdge,
+    industryOutlook,
     valueMaintenance: [
       'Pair this skill with AI tooling and workflow automation.',
       'Document outcomes to show measurable impact beyond task execution.',
@@ -906,7 +920,7 @@ export const generateCipherReport = (
   connections: LinkedInConnection[],
   resumeText: string
 ): CipherReport => {
-  const skillInsights = skills.map(buildSkillInsight);
+  const skillInsights = skills.map((skill) => buildSkillInsight(skill, profile));
   const rankedSkills = [...skillInsights].sort(
     (a, b) => b.marketValueScore - a.marketValueScore
   );

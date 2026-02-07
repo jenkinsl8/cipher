@@ -283,6 +283,104 @@ export const AI_TOOLS_BY_DOMAIN: Record<string, string[]> = {
   Operations: ['Process mining AI', 'Supply chain AI', 'Automation platforms'],
 };
 
+export const INDUSTRY_OUTLOOK_BY_CATEGORY: Record<
+  SkillCategory,
+  { industries: string[]; notes: string; sources: string[] }
+> = {
+  technical: {
+    industries: [
+      'Software and cloud services',
+      'Financial services technology',
+      'Healthcare IT',
+      'Cybersecurity',
+      'AI infrastructure',
+    ],
+    notes:
+      'BLS data shows sustained demand for software, cloud, and security roles; AI adoption is expanding technical skill premiums.',
+    sources: [
+      'BLS Occupational Outlook Handbook',
+      'O*NET Online',
+      'LinkedIn Workforce Reports',
+      'World Economic Forum Future of Jobs',
+    ],
+  },
+  analytical: {
+    industries: [
+      'Finance and risk analytics',
+      'Healthcare analytics',
+      'Supply chain and logistics',
+      'Business intelligence and data platforms',
+    ],
+    notes:
+      'Data and analytics roles remain a priority across regulated industries; AI shifts work toward decision framing and governance.',
+    sources: [
+      'BLS Occupational Outlook Handbook',
+      'Lightcast/Burning Glass labor data',
+      'World Economic Forum Future of Jobs',
+    ],
+  },
+  leadership: {
+    industries: [
+      'Enterprise technology',
+      'Healthcare operations',
+      'Financial services',
+      'Public sector and regulated industries',
+    ],
+    notes:
+      'Leadership roles remain resilient to automation; demand stays high in regulated and complex environments.',
+    sources: [
+      'BLS Occupational Outlook Handbook',
+      'WEF Future of Jobs',
+      'McKinsey Global Institute',
+    ],
+  },
+  creative: {
+    industries: [
+      'Digital marketing and content',
+      'Product design and UX',
+      'Brand strategy',
+      'Media and entertainment',
+    ],
+    notes:
+      'Creative roles are evolving with AI tooling; differentiation comes from strategy, taste, and cross-channel execution.',
+    sources: [
+      'BLS Occupational Outlook Handbook',
+      'LinkedIn Workforce Reports',
+      'Adobe/Design industry surveys',
+    ],
+  },
+  'soft/interpersonal': {
+    industries: [
+      'Client services and consulting',
+      'Sales and partnerships',
+      'Healthcare and caregiving',
+      'People operations',
+    ],
+    notes:
+      'Interpersonal skills remain critical in relationship-driven roles; AI amplifies but does not replace trust and negotiation.',
+    sources: [
+      'BLS Occupational Outlook Handbook',
+      'WEF Future of Jobs',
+      'LinkedIn Skills Reports',
+    ],
+  },
+  'domain-specific': {
+    industries: [
+      'Regulated industries (finance, healthcare, legal)',
+      'Insurance and risk',
+      'Public sector and compliance',
+      'Industry-specific SaaS',
+    ],
+    notes:
+      'Domain expertise keeps strong demand where regulatory risk and accountability are high.',
+    sources: [
+      'BLS Occupational Outlook Handbook',
+      'O*NET Online',
+      'Industry salary surveys',
+    ],
+  },
+};
+
 export const MARKET_VALIDATED_RESOURCES = [
   {
     name: 'Coursera (audit mode)',

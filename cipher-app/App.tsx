@@ -1210,6 +1210,15 @@ export default function App() {
                     {skill.aiTools.length ? (
                       <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
                     ) : null}
+                <Text style={styles.reportText}>
+                  Industry outlook (US): {skill.industryOutlook.industries.join(', ')}
+                </Text>
+                <Text style={styles.reportText}>
+                  Outlook notes: {skill.industryOutlook.notes}
+                </Text>
+                <Text style={styles.reportText}>
+                  Sources: {skill.industryOutlook.sources.join(', ')}
+                </Text>
                     <Text style={styles.reportText}>
                       10-year value strategy: {skill.valueMaintenance.join(' ')}
                     </Text>
