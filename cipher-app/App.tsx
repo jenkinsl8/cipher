@@ -148,6 +148,39 @@ const isHttpsContext = () => {
 const isLocalUrl = (value: string) =>
   value.includes('localhost') || value.includes('127.0.0.1');
 
+const mergeProfile = (
+  resumeProfile: Partial<UserProfile>,
+  manualProfile: UserProfile
+): UserProfile => {
+  const merged: UserProfile = { ...manualProfile };
+
+  (Object.keys(manualProfile) as Array<keyof UserProfile>).forEach((key) => {
+    const manualValue = manualProfile[key];
+    if (typeof manualValue === 'string') {
+      if (manualValue.trim()) {
+        merged[key] = manualValue;
+      } else if (resumeProfile[key]) {
+        merged[key] = resumeProfile[key] as UserProfile[typeof key];
+      }
+    } else {
+      merged[key] = manualValue;
+    }
+  });
+
+  (Object.keys(resumeProfile) as Array<keyof UserProfile>).forEach((key) => {
+    const manualValue = manualProfile[key];
+    const resumeValue = resumeProfile[key];
+    if (typeof manualValue === 'string' && manualValue.trim()) {
+      return;
+    }
+    if (resumeValue !== undefined) {
+      merged[key] = resumeValue as UserProfile[typeof key];
+    }
+  });
+
+  return merged;
+};
+
 export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
@@ -185,7 +218,7 @@ export default function App() {
   }, [useAiParser, aiResumeExtraction, resumeText]);
   const resumeSkills = resumeExtraction.skills;
   const mergedProfile = useMemo(
-    () => ({ ...resumeExtraction.profile, ...profile }),
+    () => mergeProfile(resumeExtraction.profile, profile),
     [profile, resumeExtraction.profile]
   );
   const report = useMemo(
