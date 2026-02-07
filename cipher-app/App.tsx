@@ -12,6 +12,7 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
@@ -176,6 +177,8 @@ const mergeProfile = (
 export default function App() {
   const scrollViewRef = useRef<ScrollView>(null);
   const sectionPositions = useRef<Record<string, number>>({});
+  const { width } = useWindowDimensions();
+  const isCompact = width < 900;
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
@@ -235,6 +238,14 @@ export default function App() {
       ),
     [mergedProfile, resumeSkills, connections, resumeText]
   );
+
+  const highRiskCount = report.skillsPortfolio.filter((skill) =>
+    skill.aiRisk === 'High' || skill.aiRisk === 'Very High'
+  ).length;
+  const aiRiskLabel = highRiskCount
+    ? `${highRiskCount} high-risk skills`
+    : 'Low AI risk';
+  const marketSignal = report.marketSnapshot.indicators || report.marketSnapshot.summary;
 
   const handleSectionLayout = (sectionId: string, y: number) => {
     sectionPositions.current[sectionId] = y;
@@ -728,85 +739,82 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
-      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Cipher Career Strategist</Text>
-        <Text style={styles.subtitle}>
-          Web + mobile intelligence hub for AI-ready career strategy.
-        </Text>
-
-        <Section
-          title="Dashboard"
-          subtitle="Snapshot and quick navigation"
-          sectionId="dashboard"
-          onLayout={handleSectionLayout}
+      <View style={[styles.appShell, isCompact ? styles.appShellCompact : null]}>
+        <NavRail
+          isCompact={isCompact}
+          onNavigate={scrollToSection}
+        />
+        <ScrollView
+          ref={scrollViewRef}
+          style={styles.mainContent}
+          contentContainerStyle={styles.container}
         >
-          <View style={styles.dashboardGrid}>
-            <DashboardCard
-              label="Resume"
-              value={resumeFileName ? 'Uploaded' : 'Missing'}
-              meta={resumeFileName || 'Upload resume to begin'}
-            />
-            <DashboardCard
-              label="AI Parser"
-              value={useAiParser ? 'AI Parsed' : 'Local Extract'}
-              meta={aiStatus || (aiParserMode === 'openai' ? 'OpenAI mode' : 'Serverless')}
-            />
-            <DashboardCard
-              label="ATS Score"
-              value={
-                report.resumeAnalysis?.atsScore !== undefined
-                  ? `${report.resumeAnalysis.atsScore}`
-                  : 'N/A'
-              }
-              meta={report.resumeAnalysis?.atsReadiness || 'Upload resume'}
-            />
-            <DashboardCard
-              label="LinkedIn"
-              value={connections.length ? `${connections.length} connections` : 'Not parsed'}
-              meta={linkedInAiStatus || linkedInStatus || 'Upload connections file'}
-            />
-          </View>
+          <Text style={styles.title}>Cipher Career Strategist</Text>
+          <Text style={styles.subtitle}>
+            Web + mobile intelligence hub for AI-ready career strategy.
+          </Text>
 
-          <View style={styles.dashboardGrid}>
-            <DashboardCard
-              label="Market Snapshot"
-              value={mergedProfile.location || 'Location needed'}
-              meta={report.marketSnapshot.summary}
-            />
-            <DashboardCard
-              label="AI Resilience"
-              value={report.aiResilience.title}
-              meta={report.aiResilience.summary}
-            />
-            <DashboardCard
-              label="AI Forward"
-              value={report.aiForward.title}
-              meta={report.aiForward.summary}
-            />
-            <DashboardCard
-              label="Demographic Strategy"
-              value={report.demographicStrategy.title}
-              meta={report.demographicStrategy.summary}
-            />
-          </View>
-
-          <Text style={styles.label}>Quick links</Text>
-          <View style={styles.linkRow}>
-            <LinkButton label="Resume Intake" onPress={() => scrollToSection('resume')} />
-            <LinkButton label="AI Parser" onPress={() => scrollToSection('ai-parser')} />
-            <LinkButton label="LinkedIn" onPress={() => scrollToSection('linkedin')} />
-            <LinkButton label="Detailed Report" onPress={() => scrollToSection('detailed-report')} />
-          </View>
-
-          <Pressable
-            style={styles.secondaryButton}
-            onPress={() => setShowDetailedReport((prev) => !prev)}
+          <Section
+            title="Dashboard"
+            subtitle="Snapshot and quick navigation"
+            sectionId="dashboard"
+            onLayout={handleSectionLayout}
           >
-            <Text style={styles.secondaryButtonText}>
-              {showDetailedReport ? 'Hide detailed report' : 'Show detailed report'}
-            </Text>
-          </Pressable>
-        </Section>
+            <View style={styles.dashboardGrid}>
+              <DashboardCard
+                label="Resume"
+                value={resumeFileName ? 'Uploaded' : 'Missing'}
+                meta={resumeFileName || 'Upload resume to begin'}
+              />
+              <DashboardCard
+                label="AI Parser"
+                value={useAiParser ? 'AI Parsed' : 'Local Extract'}
+                meta={aiStatus || (aiParserMode === 'openai' ? 'OpenAI mode' : 'Serverless')}
+              />
+              <DashboardCard
+                label="LinkedIn"
+                value={connections.length ? `${connections.length} connections` : 'Not parsed'}
+                meta={linkedInAiStatus || linkedInStatus || 'Upload connections file'}
+              />
+              <DashboardCard
+                label="Location"
+                value={mergedProfile.location || 'Location needed'}
+                meta={report.marketSnapshot.summary}
+              />
+            </View>
+
+            <Text style={styles.label}>KPI tiles</Text>
+            <View style={styles.dashboardGrid}>
+              <KpiTile
+                label="ATS Score"
+                value={
+                  report.resumeAnalysis?.atsScore !== undefined
+                    ? `${report.resumeAnalysis.atsScore}`
+                    : 'N/A'
+                }
+                meta={report.resumeAnalysis?.atsReadiness || 'Upload resume'}
+              />
+              <KpiTile label="AI Risk" value={aiRiskLabel} meta="From skills portfolio" />
+              <KpiTile label="Market Signals" value={marketSignal} meta="Auto by location" />
+            </View>
+
+            <Text style={styles.label}>Quick links</Text>
+            <View style={styles.linkRow}>
+              <LinkButton label="Resume Intake" onPress={() => scrollToSection('resume')} />
+              <LinkButton label="AI Parser" onPress={() => scrollToSection('ai-parser')} />
+              <LinkButton label="LinkedIn" onPress={() => scrollToSection('linkedin')} />
+              <LinkButton label="Detailed Report" onPress={() => scrollToSection('detailed-report')} />
+            </View>
+
+            <Pressable
+              style={styles.secondaryButton}
+              onPress={() => setShowDetailedReport((prev) => !prev)}
+            >
+              <Text style={styles.secondaryButtonText}>
+                {showDetailedReport ? 'Hide detailed report' : 'Show detailed report'}
+              </Text>
+            </Pressable>
+          </Section>
 
         <Section title="Agent Lineup" subtitle="Multi-agent workflow status">
           <View style={styles.agentGrid}>
@@ -1168,265 +1176,297 @@ export default function App() {
             sectionId="detailed-report"
             onLayout={handleSectionLayout}
           >
-            <ReportSectionView section={report.aiResilience} />
-            <ReportSectionView section={report.aiForward} />
-            <ReportSectionView section={report.demographicStrategy} />
-            <ReportSectionView section={report.careerInsights} />
+            <CollapsibleCard title={report.aiResilience.title}>
+              <ReportSectionBody section={report.aiResilience} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.aiForward.title}>
+              <ReportSectionBody section={report.aiForward} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.demographicStrategy.title}>
+              <ReportSectionBody section={report.demographicStrategy} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.careerInsights.title}>
+              <ReportSectionBody section={report.careerInsights} />
+            </CollapsibleCard>
 
-          <Text style={styles.sectionTitle}>Skills Portfolio</Text>
-          {report.skillsPortfolio.length ? (
-            report.skillsPortfolio.map((skill) => (
-              <View key={skill.name} style={styles.reportCard}>
-                <Text style={styles.reportTitle}>
-                  {skill.name} ({skill.category})
+            <CollapsibleCard title="Skills Portfolio" defaultCollapsed={false}>
+              {report.skillsPortfolio.length ? (
+                report.skillsPortfolio.map((skill) => (
+                  <View key={skill.name} style={styles.reportCard}>
+                    <Text style={styles.reportTitle}>
+                      {skill.name} ({skill.category})
+                    </Text>
+                    <Text style={styles.reportMeta}>
+                      Market value score: {skill.marketValueScore} | Demand: {skill.demandLevel} |
+                      Scarcity: {skill.scarcity} | Premium: {skill.compensationPremium}
+                    </Text>
+                    <Text style={styles.reportMeta}>
+                      AI risk: {skill.aiRisk} ({skill.aiImpactTimeline})
+                    </Text>
+                    <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
+                    <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
+                    <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
+                    <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
+                    {skill.aiTools.length ? (
+                      <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
+                    ) : null}
+                    <Text style={styles.reportText}>
+                      10-year value strategy: {skill.valueMaintenance.join(' ')}
+                    </Text>
+                    <Text style={styles.reportText}>
+                      Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
+                      {skill.projections.tenYear}
+                    </Text>
+                  </View>
+                ))
+              ) : (
+                <Text style={styles.helper}>
+                  Upload your resume to generate the skills portfolio.
+                </Text>
+              )}
+            </CollapsibleCard>
+
+            <CollapsibleCard title="Career Path Options" defaultCollapsed={false}>
+              {report.careerPaths.map((path) => (
+                <View key={path.tier} style={styles.reportCard}>
+                  <Text style={styles.reportTitle}>{path.tier}</Text>
+                  <Text style={styles.reportText}>{path.title}</Text>
+                  <Text style={styles.reportText}>{path.overview}</Text>
+                  <Text style={styles.reportText}>Risk/reward: {path.riskReward}</Text>
+                  <Text style={styles.reportText}>
+                    Earning potential: {path.earningPotential}
+                  </Text>
+                  <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
+                  <Text style={styles.reportSubheading}>3-Year Plan</Text>
+                  {path.threeYearPlan.year1.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - Year 1: {item}
+                    </Text>
+                  ))}
+                  {path.threeYearPlan.year2.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - Year 2: {item}
+                    </Text>
+                  ))}
+                  {path.threeYearPlan.year3.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - Year 3: {item}
+                    </Text>
+                  ))}
+                  <Text style={styles.reportSubheading}>5-Year Plan</Text>
+                  {path.fiveYearPlan.year4.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - Year 4: {item}
+                    </Text>
+                  ))}
+                  {path.fiveYearPlan.year5.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - Year 5: {item}
+                    </Text>
+                  ))}
+                  <Text style={styles.reportSubheading}>Learning Path</Text>
+                  {path.learningPath.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                  <Text style={styles.reportSubheading}>Projects</Text>
+                  {path.projects.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                  <Text style={styles.reportSubheading}>Earnings Strategy</Text>
+                  {path.earningsStrategy.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                  <Text style={styles.reportSubheading}>Differentials</Text>
+                  {path.differentials.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                  <Text style={styles.reportSubheading}>Real-life Examples</Text>
+                  {path.examples.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))}
+                </View>
+              ))}
+            </CollapsibleCard>
+
+            <CollapsibleCard title={report.learningRoadmap.title}>
+              <ReportSectionBody section={report.learningRoadmap} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.skillsGapResources.title}>
+              <ReportSectionBody section={report.skillsGapResources} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.competencyMilestones.title}>
+              <ReportSectionBody section={report.competencyMilestones} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.projectsToPursue.title}>
+              <ReportSectionBody section={report.projectsToPursue} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.earningsMaximization.title}>
+              <ReportSectionBody section={report.earningsMaximization} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.opportunityMap.title}>
+              <ReportSectionBody section={report.opportunityMap} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.gapAnalysis.title}>
+              <ReportSectionBody section={report.gapAnalysis} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.geographicOptions.title}>
+              <ReportSectionBody section={report.geographicOptions} />
+            </CollapsibleCard>
+            {report.internationalPlan ? (
+              <CollapsibleCard title={report.internationalPlan.title}>
+                <ReportSectionBody section={report.internationalPlan} />
+              </CollapsibleCard>
+            ) : null}
+            {report.entrepreneurshipPlan ? (
+              <CollapsibleCard title={report.entrepreneurshipPlan.title}>
+                <ReportSectionBody section={report.entrepreneurshipPlan} />
+              </CollapsibleCard>
+            ) : null}
+            <CollapsibleCard title={report.actionPlan.title}>
+              <ReportSectionBody section={report.actionPlan} />
+            </CollapsibleCard>
+            <CollapsibleCard title={report.marketOutlook.title}>
+              <ReportSectionBody section={report.marketOutlook} />
+            </CollapsibleCard>
+
+            {report.resumeAnalysis ? (
+              <CollapsibleCard title="Resume ATS Scan">
+                <Text style={styles.reportText}>
+                  ATS score: {report.resumeAnalysis.atsScore} (
+                  {report.resumeAnalysis.atsReadiness})
                 </Text>
                 <Text style={styles.reportMeta}>
-                  Market value score: {skill.marketValueScore} | Demand: {skill.demandLevel} |
-                  Scarcity: {skill.scarcity} | Premium: {skill.compensationPremium}
+                  Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
+                  {report.resumeAnalysis.keywordCoverage}%
                 </Text>
-                <Text style={styles.reportMeta}>
-                  AI risk: {skill.aiRisk} ({skill.aiImpactTimeline})
-                </Text>
-                <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
-                <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
-                <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
-                <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
-                {skill.aiTools.length ? (
-                  <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
+                <Text style={styles.reportSubheading}>Sections detected</Text>
+                {report.resumeAnalysis.sectionsPresent.length ? (
+                  report.resumeAnalysis.sectionsPresent.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.reportBullet}>- None detected</Text>
+                )}
+                {report.resumeAnalysis.missingSections.length ? (
+                  <>
+                    <Text style={styles.reportSubheading}>Missing sections</Text>
+                    {report.resumeAnalysis.missingSections.map((item) => (
+                      <Text key={item} style={styles.reportBullet}>
+                        - {item}
+                      </Text>
+                    ))}
+                  </>
                 ) : null}
-                <Text style={styles.reportText}>
-                  10-year value strategy: {skill.valueMaintenance.join(' ')}
-                </Text>
-                <Text style={styles.reportText}>
-                  Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
-                  {skill.projections.tenYear}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.helper}>
-              Upload your resume to generate the skills portfolio.
-            </Text>
-          )}
-
-          <Text style={styles.sectionTitle}>Career Path Options</Text>
-          {report.careerPaths.map((path) => (
-            <View key={path.tier} style={styles.reportCard}>
-              <Text style={styles.reportTitle}>{path.tier}</Text>
-              <Text style={styles.reportText}>{path.title}</Text>
-              <Text style={styles.reportText}>{path.overview}</Text>
-              <Text style={styles.reportText}>Risk/reward: {path.riskReward}</Text>
-              <Text style={styles.reportText}>
-                Earning potential: {path.earningPotential}
-              </Text>
-              <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
-              <Text style={styles.reportSubheading}>3-Year Plan</Text>
-              {path.threeYearPlan.year1.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 1: {item}
-                </Text>
-              ))}
-              {path.threeYearPlan.year2.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 2: {item}
-                </Text>
-              ))}
-              {path.threeYearPlan.year3.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 3: {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>5-Year Plan</Text>
-              {path.fiveYearPlan.year4.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 4: {item}
-                </Text>
-              ))}
-              {path.fiveYearPlan.year5.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 5: {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Learning Path</Text>
-              {path.learningPath.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Projects</Text>
-              {path.projects.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Earnings Strategy</Text>
-              {path.earningsStrategy.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Differentials</Text>
-              {path.differentials.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Real-life Examples</Text>
-              {path.examples.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-            </View>
-          ))}
-
-          <ReportSectionView section={report.learningRoadmap} />
-          <ReportSectionView section={report.skillsGapResources} />
-          <ReportSectionView section={report.competencyMilestones} />
-          <ReportSectionView section={report.projectsToPursue} />
-          <ReportSectionView section={report.earningsMaximization} />
-          <ReportSectionView section={report.opportunityMap} />
-          <ReportSectionView section={report.gapAnalysis} />
-          <ReportSectionView section={report.geographicOptions} />
-          {report.internationalPlan ? (
-            <ReportSectionView section={report.internationalPlan} />
-          ) : null}
-          {report.entrepreneurshipPlan ? (
-            <ReportSectionView section={report.entrepreneurshipPlan} />
-          ) : null}
-          <ReportSectionView section={report.actionPlan} />
-          <ReportSectionView section={report.marketOutlook} />
-
-          {report.resumeAnalysis ? (
-            <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>Resume ATS Scan</Text>
-              <Text style={styles.reportText}>
-                ATS score: {report.resumeAnalysis.atsScore} (
-                {report.resumeAnalysis.atsReadiness})
-              </Text>
-              <Text style={styles.reportMeta}>
-                Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
-                {report.resumeAnalysis.keywordCoverage}%
-              </Text>
-              <Text style={styles.reportSubheading}>Sections detected</Text>
-              {report.resumeAnalysis.sectionsPresent.length ? (
-                report.resumeAnalysis.sectionsPresent.map((item) => (
+                {report.resumeAnalysis.flags.length ? (
+                  <>
+                    <Text style={styles.reportSubheading}>ATS flags</Text>
+                    {report.resumeAnalysis.flags.map((item) => (
+                      <Text key={item} style={styles.reportBullet}>
+                        - {item}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
+                <Text style={styles.reportSubheading}>Recommendations</Text>
+                {report.resumeAnalysis.recommendations.map((item) => (
                   <Text key={item} style={styles.reportBullet}>
                     - {item}
                   </Text>
-                ))
-              ) : (
-                <Text style={styles.reportBullet}>- None detected</Text>
-              )}
-              {report.resumeAnalysis.missingSections.length ? (
-                <>
-                  <Text style={styles.reportSubheading}>Missing sections</Text>
-                  {report.resumeAnalysis.missingSections.map((item) => (
-                    <Text key={item} style={styles.reportBullet}>
-                      - {item}
-                    </Text>
-                  ))}
-                </>
-              ) : null}
-              {report.resumeAnalysis.flags.length ? (
-                <>
-                  <Text style={styles.reportSubheading}>ATS flags</Text>
-                  {report.resumeAnalysis.flags.map((item) => (
-                    <Text key={item} style={styles.reportBullet}>
-                      - {item}
-                    </Text>
-                  ))}
-                </>
-              ) : null}
-              <Text style={styles.reportSubheading}>Recommendations</Text>
-              {report.resumeAnalysis.recommendations.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-            </View>
-          ) : null}
+                ))}
+              </CollapsibleCard>
+            ) : null}
 
-          {report.networkReport ? (
-            <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>LinkedIn Network Analysis</Text>
-              <Text style={styles.reportText}>
-                Total connections: {report.networkReport.totalConnections}
-              </Text>
-              <Text style={styles.reportSubheading}>Industry breakdown</Text>
-              {report.networkReport.industryBreakdown.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
+            {report.networkReport ? (
+              <CollapsibleCard title="LinkedIn Network Analysis">
+                <Text style={styles.reportText}>
+                  Total connections: {report.networkReport.totalConnections}
                 </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Seniority breakdown</Text>
-              {report.networkReport.seniorityBreakdown.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Company breakdown</Text>
-              {report.networkReport.companyBreakdown.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Geography</Text>
-              {report.networkReport.geographyBreakdown.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Hiring managers</Text>
-              {report.networkReport.hiringManagers.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Recruiters</Text>
-              {report.networkReport.recruiters.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Warm introduction paths</Text>
-              {report.networkReport.warmIntroductions.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Priority order</Text>
-              {report.networkReport.priorityOrder.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Outreach templates</Text>
-              {report.networkReport.outreachTemplates.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>What to ask for</Text>
-              {report.networkReport.whatToAsk.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Network gaps</Text>
-              {report.networkReport.gaps.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Networking action plan</Text>
-              {report.networkReport.actionPlan.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-            </View>
-          ) : null}
+                <Text style={styles.reportSubheading}>Industry breakdown</Text>
+                {report.networkReport.industryBreakdown.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Seniority breakdown</Text>
+                {report.networkReport.seniorityBreakdown.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Company breakdown</Text>
+                {report.networkReport.companyBreakdown.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Geography</Text>
+                {report.networkReport.geographyBreakdown.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Hiring managers</Text>
+                {report.networkReport.hiringManagers.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Recruiters</Text>
+                {report.networkReport.recruiters.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Warm introduction paths</Text>
+                {report.networkReport.warmIntroductions.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Priority order</Text>
+                {report.networkReport.priorityOrder.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Outreach templates</Text>
+                {report.networkReport.outreachTemplates.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>What to ask for</Text>
+                {report.networkReport.whatToAsk.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Network gaps</Text>
+                {report.networkReport.gaps.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Networking action plan</Text>
+                {report.networkReport.actionPlan.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+              </CollapsibleCard>
+            ) : null}
           </Section>
         ) : (
           <Section title="Detailed Report" subtitle="Hidden for readability.">
@@ -1435,7 +1475,8 @@ export default function App() {
             </Text>
           </Section>
         )}
-      </ScrollView>
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
@@ -1466,6 +1507,37 @@ const Section = ({
     {children}
   </View>
 );
+
+const NavRail = ({
+  isCompact,
+  onNavigate,
+}: {
+  isCompact: boolean;
+  onNavigate: (sectionId: string) => void;
+}) => {
+  const items = [
+    { id: 'dashboard', label: 'Dashboard' },
+    { id: 'resume', label: 'Resume' },
+    { id: 'ai-parser', label: 'AI Parser' },
+    { id: 'linkedin', label: 'LinkedIn' },
+    { id: 'detailed-report', label: 'Report' },
+  ];
+
+  return (
+    <View style={[styles.navRail, isCompact ? styles.navRailCompact : null]}>
+      <Text style={styles.navTitle}>Cipher</Text>
+      {items.map((item) => (
+        <Pressable
+          key={item.id}
+          style={styles.navButton}
+          onPress={() => onNavigate(item.id)}
+        >
+          <Text style={styles.navButtonText}>{item.label}</Text>
+        </Pressable>
+      ))}
+    </View>
+  );
+};
 
 const Field = ({
   label,
@@ -1521,6 +1593,22 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
   </View>
 );
 
+const KpiTile = ({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+}) => (
+  <View style={styles.kpiTile}>
+    <Text style={styles.kpiLabel}>{label}</Text>
+    <Text style={styles.kpiValue}>{value}</Text>
+    {meta ? <Text style={styles.kpiMeta}>{meta}</Text> : null}
+  </View>
+);
+
 const DashboardCard = ({
   label,
   value,
@@ -1542,6 +1630,46 @@ const LinkButton = ({ label, onPress }: { label: string; onPress: () => void }) 
     <Text style={styles.linkButtonText}>{label}</Text>
   </Pressable>
 );
+
+const ReportSectionBody = ({
+  section,
+}: {
+  section: { title: string; summary: string; bullets?: string[] };
+}) => (
+  <View>
+    <Text style={styles.reportText}>{section.summary}</Text>
+    {section.bullets?.map((item) => (
+      <Text key={item} style={styles.reportBullet}>
+        - {item}
+      </Text>
+    ))}
+  </View>
+);
+
+const CollapsibleCard = ({
+  title,
+  children,
+  defaultCollapsed = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultCollapsed?: boolean;
+}) => {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  return (
+    <View style={styles.collapsibleCard}>
+      <Pressable
+        style={styles.collapsibleHeader}
+        onPress={() => setCollapsed((prev) => !prev)}
+      >
+        <Text style={styles.reportTitle}>{title}</Text>
+        <Text style={styles.collapsibleToggle}>{collapsed ? '+' : '-'}</Text>
+      </Pressable>
+      {!collapsed ? <View style={styles.collapsibleBody}>{children}</View> : null}
+    </View>
+  );
+};
 const Chip = ({
   label,
   selected,
@@ -1588,6 +1716,52 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  appShell: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  appShellCompact: {
+    flexDirection: 'column',
+  },
+  mainContent: {
+    flex: 1,
+  },
+  navRail: {
+    width: 200,
+    backgroundColor: '#0b0e16',
+    paddingTop: 24,
+    paddingHorizontal: 16,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  navRailCompact: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  navTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  navButton: {
+    backgroundColor: '#121725',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  navButtonText: {
+    color: colors.text,
+    fontWeight: '600',
   },
   container: {
     padding: 20,
@@ -1763,6 +1937,30 @@ const styles = StyleSheet.create({
     marginTop: 6,
     fontSize: 12,
   },
+  kpiTile: {
+    backgroundColor: '#0f1320',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 160,
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  kpiLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  kpiValue: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  kpiMeta: {
+    color: colors.muted,
+    marginTop: 6,
+    fontSize: 12,
+  },
   linkRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
@@ -1778,6 +1976,27 @@ const styles = StyleSheet.create({
   },
   linkButtonText: {
     color: colors.text,
+  },
+  collapsibleCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  collapsibleToggle: {
+    color: colors.accentStrong,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  collapsibleBody: {
+    marginTop: 8,
   },
   agentCard: {
     backgroundColor: '#121725',
