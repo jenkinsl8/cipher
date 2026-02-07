@@ -670,7 +670,8 @@ export default function App() {
           {aiParserMode === 'openai' ? (
             <Text style={styles.helper}>
               Note: Some browsers block direct API calls due to CORS. If this fails,
-              switch to the serverless parser. PDF files are sent directly to OpenAI.
+              switch to the serverless parser. Only PDFs are sent as attachments;
+              other file types use extracted text.
             </Text>
           ) : null}
           <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>

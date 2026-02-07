@@ -245,11 +245,13 @@ ${resumeText}`;
     'Content-Type': 'application/json',
   };
 
-  if (file?.data) {
-    const mimeType = inferMimeType(file);
+  const fileMime = file ? inferMimeType(file) : '';
+  const canAttachPdf = fileMime === 'application/pdf';
+
+  if (file?.data && canAttachPdf) {
     const fileData = file.data.startsWith('data:')
       ? file.data
-      : `data:${mimeType};base64,${file.data}`;
+      : `data:${fileMime};base64,${file.data}`;
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
       method: 'POST',
       headers,
@@ -302,6 +304,12 @@ ${resumeText}`;
       throw new Error('AI parser returned invalid JSON.');
     }
     return normalizeAiResumePayload(parsed);
+  }
+
+  if (!resumeText.trim() && file?.data && !canAttachPdf) {
+    throw new Error(
+      'OpenAI file attachments only support PDF. Please upload a PDF or paste resume text.'
+    );
   }
 
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {

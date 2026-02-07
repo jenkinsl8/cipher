@@ -79,7 +79,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
       apiKey,
       model: 'gpt-4o',
       baseUrl: 'https://api.openai.com',
-      resumeText: '',
+      resumeText: 'Experience: Product Manager',
       file: {
         name: 'resume.docx',
         mimeType: undefined,

@@ -90,7 +90,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     expect(fileInput.file.file_data).toBe('data:application/pdf;base64,dGVzdA==');
   });
 
-  it('sends DOCX file data to chat completions and parses JSON', async () => {
+  it('uses text-only prompt when file is not PDF', async () => {
     const payload = {
       profile: {
         name: 'Alex Doe',
@@ -117,7 +117,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       apiKey: 'test-key',
       model: 'gpt-4o',
       baseUrl: 'https://api.openai.com',
-      resumeText: '',
+      resumeText: 'Experience: Program Manager',
       file: {
         name: 'resume.docx',
         mimeType: undefined,
@@ -131,13 +131,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     const [url, options] = fetchMock.mock.calls[0];
     expect(url).toContain('/v1/chat/completions');
     const body = JSON.parse(options.body);
-    const fileInput = body.messages[1].content.find(
-      (item: { type: string }) => item.type === 'file'
-    );
-    expect(fileInput.file.filename).toBe('resume.docx');
-    expect(fileInput.file.file_data).toBe(
-      'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,ZG9jeA=='
-    );
+    expect(typeof body.messages[1].content).toBe('string');
   });
 
   it('includes base64 data URI in file payload', async () => {
