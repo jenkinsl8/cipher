@@ -127,4 +127,43 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     expect(fileInput.filename).toBe('resume.docx');
     expect(fileInput.file_data).toBe('ZG9jeA==');
   });
+
+  it('preserves file base64 payload for PDF uploads', async () => {
+    const payload = {
+      profile: {
+        name: 'Casey Lee',
+        currentRole: 'Architect',
+        yearsExperience: '12',
+        education: '',
+        certifications: '',
+        industries: '',
+        location: '',
+      },
+      skills: [],
+      warnings: [],
+    };
+    const fetchMock = globalThis.fetch as jest.Mock;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      text: async () => JSON.stringify(createOpenAiResponse(payload)),
+    });
+
+    const base64 = 'AAECAwQFBgcICQorLw==';
+    await parseResumeWithOpenAI({
+      apiKey: 'test-key',
+      model: 'gpt-4o',
+      baseUrl: 'https://api.openai.com',
+      resumeText: '',
+      file: {
+        name: 'resume.pdf',
+        mimeType: 'application/pdf',
+        data: base64,
+      },
+    });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    const fileInput = body.input[1].content.find((item: { type: string }) => item.type === 'input_file');
+    expect(fileInput.file_data).toBe(base64);
+  });
 });
