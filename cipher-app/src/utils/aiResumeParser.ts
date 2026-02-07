@@ -292,6 +292,7 @@ ${resumeText}`;
         ],
         text: {
           format: {
+            name: 'resume_parse',
             type: 'json_schema',
             json_schema: buildJsonSchema(),
           },
