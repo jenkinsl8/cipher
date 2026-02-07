@@ -64,7 +64,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
       resumeText: '',
       file: {
         name: 'resume.pdf',
-        mimeType: 'application/pdf',
+        mimeType: undefined,
         data: createPdfBase64(),
       },
     });
@@ -82,7 +82,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
       resumeText: '',
       file: {
         name: 'resume.docx',
-        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        mimeType: undefined,
         data: await createDocxBase64(),
       },
     });

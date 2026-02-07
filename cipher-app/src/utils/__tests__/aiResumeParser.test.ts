@@ -186,4 +186,48 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       `data:application/pdf;base64,${base64}`
     );
   });
+
+  it('does not double-prefix data URI when already provided', async () => {
+    const payload = {
+      profile: {
+        name: 'Dana Stone',
+        currentRole: 'Analyst',
+        yearsExperience: '5',
+        education: '',
+        certifications: '',
+        industries: '',
+        location: '',
+      },
+      skills: [],
+      warnings: [],
+    };
+    const fetchMock = globalThis.fetch as jest.Mock;
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify(payload) } }],
+      }),
+      text: async () => JSON.stringify(createOpenAiResponse(payload)),
+    });
+
+    const dataUri = 'data:application/pdf;base64,QUJD';
+    await parseResumeWithOpenAI({
+      apiKey: 'test-key',
+      model: 'gpt-4o',
+      baseUrl: 'https://api.openai.com',
+      resumeText: '',
+      file: {
+        name: 'resume.pdf',
+        mimeType: 'application/pdf',
+        data: dataUri,
+      },
+    });
+
+    const [, options] = fetchMock.mock.calls[0];
+    const body = JSON.parse(options.body);
+    const fileInput = body.messages[1].content.find(
+      (item: { type: string }) => item.type === 'file'
+    );
+    expect(fileInput.file.file_data).toBe(dataUri);
+  });
 });
