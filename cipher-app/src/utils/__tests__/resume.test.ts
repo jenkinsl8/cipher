@@ -48,6 +48,23 @@ Program Manager - Growth Team (2017-2023)
       expect.arrayContaining(['Project Management', 'Data Analysis'])
     );
   });
+
+  it('includes both soft and hard skills when available', () => {
+    const resume = `Taylor Lee
+Summary
+Collaborative leader with strong communication and negotiation skills.
+Experience
+Program Manager (2018-2024)
+- Led cross-functional teams and stakeholder management.
+Skills
+SQL, Cloud, Leadership, Communication`;
+
+    const result = parseResume(resume);
+    const names = result.skills.map((skill) => skill.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['Sql', 'Cloud', 'Leadership', 'Communication'])
+    );
+  });
 });
 
 describe('resume extraction helpers', () => {

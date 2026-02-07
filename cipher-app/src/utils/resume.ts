@@ -76,47 +76,62 @@ const INDUSTRY_KEYWORDS: { industry: string; keywords: string[] }[] = [
   { industry: 'Logistics', keywords: ['logistics', 'supply chain', 'operations'] },
 ];
 
-const SKILL_KEYWORDS = [
+const HARD_SKILL_KEYWORDS = [
   'project management',
   'program management',
   'product management',
-  'strategic planning',
   'data analysis',
   'analytics',
   'sql',
   'python',
   'excel',
-  'communication',
-  'leadership',
-  'stakeholder management',
-  'customer success',
-  'sales',
-  'marketing',
-  'design',
-  'ux',
-  'research',
-  'operations',
-  'finance',
-  'budgeting',
-  'forecasting',
-  'negotiation',
-  'process improvement',
   'agile',
   'scrum',
   'roadmapping',
   'go-to-market',
   'user research',
-  'content strategy',
-  'copywriting',
   'machine learning',
   'ai',
   'cloud',
   'devops',
   'security',
   'compliance',
+  'finance',
+  'budgeting',
+  'forecasting',
+  'operations',
+  'marketing',
+  'design',
+  'ux',
+  'research',
+  'content strategy',
+  'copywriting',
+  'sales',
   'hr',
   'recruiting',
 ];
+
+const SOFT_SKILL_KEYWORDS = [
+  'communication',
+  'collaboration',
+  'leadership',
+  'stakeholder management',
+  'strategic planning',
+  'negotiation',
+  'mentorship',
+  'coaching',
+  'conflict resolution',
+  'presentation',
+  'relationship building',
+  'customer success',
+  'team leadership',
+  'executive influence',
+  'change management',
+  'problem solving',
+  'critical thinking',
+];
+
+const SKILL_KEYWORDS = [...HARD_SKILL_KEYWORDS, ...SOFT_SKILL_KEYWORDS];
 
 const normalizeLine = (line: string) => line.trim().replace(/\s+/g, ' ');
 
@@ -364,13 +379,10 @@ export const parseResume = (text: string): ResumeExtraction => {
   if (industries.length) profile.industries = industries.join(', ');
 
   const skillLines = sections.skills || [];
-  const skillTokens = parseSkillsFromLines(skillLines);
-  let extractedSkills = Array.from(new Set(skillTokens.map((skill) => skill.toLowerCase())));
-
-  if (extractedSkills.length === 0) {
-    const lowerText = trimmed.toLowerCase();
-    extractedSkills = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
-  }
+  const skillTokens = parseSkillsFromLines(skillLines).map((skill) => skill.toLowerCase());
+  const lowerText = trimmed.toLowerCase();
+  const matchedKeywords = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
+  const extractedSkills = Array.from(new Set([...skillTokens, ...matchedKeywords]));
 
   const skills = buildSkillInputsFromNames(extractedSkills);
   const warnings: string[] = [];
@@ -378,6 +390,19 @@ export const parseResume = (text: string): ResumeExtraction => {
   if (!currentRole) warnings.push('Could not detect current role from resume.');
   if (!education) warnings.push('Could not detect education section from resume.');
   if (!skills.length) warnings.push('No skills detected. Ensure your resume lists skills.');
+
+  const hasSoftSkill = SOFT_SKILL_KEYWORDS.some((keyword) =>
+    extractedSkills.some((skill) => skill.includes(keyword))
+  );
+  const hasHardSkill = HARD_SKILL_KEYWORDS.some((keyword) =>
+    extractedSkills.some((skill) => skill.includes(keyword))
+  );
+  if (!hasSoftSkill) {
+    warnings.push('No soft skills detected. Add leadership or communication skills.');
+  }
+  if (!hasHardSkill) {
+    warnings.push('No technical skills detected. Add tools, platforms, or systems.');
+  }
 
   return {
     profile,
