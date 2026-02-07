@@ -65,6 +65,20 @@ SQL, Cloud, Leadership, Communication`;
       expect.arrayContaining(['Sql', 'Cloud', 'Leadership', 'Communication'])
     );
   });
+
+  it('infers soft skills from experience descriptions', () => {
+    const resume = `Morgan Reed
+Experience
+Senior Manager (2019-2024)
+- Led cross-functional teams and facilitated stakeholder workshops.
+- Presented quarterly results to executive leadership.`;
+
+    const result = parseResume(resume);
+    const names = result.skills.map((skill) => skill.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['Leadership', 'Facilitation', 'Public Speaking', 'Presentation'])
+    );
+  });
 });
 
 describe('resume extraction helpers', () => {

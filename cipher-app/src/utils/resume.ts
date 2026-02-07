@@ -267,6 +267,26 @@ const extractRoleFromLine = (line: string) => {
   return withoutDates;
 };
 
+const INFERRED_SOFT_SKILLS: { pattern: RegExp; skills: string[] }[] = [
+  { pattern: /lead|led|manage|managed|director|vp|head|chief|principal/i, skills: ['leadership', 'team leadership', 'coaching'] },
+  { pattern: /stakeholder|cross-functional|partnered|collaborat/i, skills: ['stakeholder management', 'collaboration'] },
+  { pattern: /present|presentation|public speaking|briefed|communicat/i, skills: ['public speaking', 'communication', 'presentation'] },
+  { pattern: /facilitat|workshop|alignment/i, skills: ['facilitation', 'consensus building'] },
+  { pattern: /negotiat|contract|vendor|procurement/i, skills: ['negotiation', 'vendor management'] },
+  { pattern: /mentor|coach|train/i, skills: ['mentorship', 'coaching'] },
+];
+
+const inferSkillsFromExperience = (experienceLines: string[]) => {
+  const inferred: string[] = [];
+  const joined = experienceLines.join(' ');
+  INFERRED_SOFT_SKILLS.forEach((rule) => {
+    if (rule.pattern.test(joined)) {
+      inferred.push(...rule.skills);
+    }
+  });
+  return inferred;
+};
+
 const extractYearsExperience = (text: string) => {
   const yearMatches = text.match(/\b(19|20)\d{2}\b/g) || [];
   const years = yearMatches.map((value) => Number(value)).filter((value) => value > 1900);
@@ -378,11 +398,14 @@ export const parseResume = (text: string): ResumeExtraction => {
   const industries = extractIndustries(trimmed);
   if (industries.length) profile.industries = industries.join(', ');
 
+  const inferredFromExperience = inferSkillsFromExperience(experienceLines);
   const skillLines = sections.skills || [];
   const skillTokens = parseSkillsFromLines(skillLines).map((skill) => skill.toLowerCase());
   const lowerText = trimmed.toLowerCase();
   const matchedKeywords = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
-  const extractedSkills = Array.from(new Set([...skillTokens, ...matchedKeywords]));
+  const extractedSkills = Array.from(
+    new Set([...skillTokens, ...matchedKeywords, ...inferredFromExperience])
+  );
 
   const skills = buildSkillInputsFromNames(extractedSkills);
   const warnings: string[] = [];
