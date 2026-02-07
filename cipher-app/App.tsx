@@ -29,6 +29,7 @@ import {
   parseResumeWithServerless,
 } from './src/utils/aiResumeParser';
 import { createEmptyReport, parseCipherReportWithOpenAI } from './src/utils/aiReport';
+import { extractJsonFromText } from './src/utils/aiResumeParser';
 import {
   AILiteracy,
   CareerGoal,
@@ -815,6 +816,185 @@ export default function App() {
     }
   };
 
+  const buildAgentContext = () => {
+    const trimmedResume = resumeText.trim();
+    const truncatedResume =
+      trimmedResume.length > 4000
+        ? `${trimmedResume.slice(0, 4000)}\n...[truncated]`
+        : trimmedResume;
+    const skillList = resumeSkills.length
+      ? resumeSkills.map((skill) => skill.name).join(', ')
+      : 'Not detected';
+    return [
+      `Profile: ${JSON.stringify(mergedProfile, null, 2)}`,
+      `Resume text: ${truncatedResume || 'Not available'}`,
+      `Skills: ${skillList}`,
+      `LinkedIn connections: ${connections.length}`,
+    ].join('\n');
+  };
+
+  const agentCatalog = [
+    {
+      id: 'market',
+      name: 'Sentinel',
+      role: 'Market conditions analyst',
+      keywords: [
+        /market/i,
+        /hiring/i,
+        /layoff/i,
+        /economy|economic/i,
+        /salary|compensation|wage/i,
+        /trend|outlook|inflation/i,
+      ],
+      prompt:
+        'Focus on hiring signals, compensation benchmarks, and regional trends.',
+    },
+    {
+      id: 'skills',
+      name: 'Aegis',
+      role: 'Skills and AI impact strategist',
+      keywords: [/skill/i, /upskill|reskill/i, /portfolio|competenc/i, /ai risk/i],
+      prompt: 'Focus on skills gaps, prioritization, and AI impact.',
+    },
+    {
+      id: 'career',
+      name: 'Atlas',
+      role: 'Career path strategist',
+      keywords: [/career/i, /path|role|pivot|transition/i, /promotion|growth/i],
+      prompt: 'Focus on realistic career paths and transition steps.',
+    },
+    {
+      id: 'network',
+      name: 'Nexus',
+      role: 'Networking strategist',
+      keywords: [/network/i, /linkedin/i, /referral/i, /recruiter|hiring manager/i],
+      prompt: 'Focus on networking strategy and outreach tactics.',
+    },
+    {
+      id: 'ats',
+      name: 'Helix',
+      role: 'Resume and ATS analyst',
+      keywords: [/resume/i, /ats/i, /cv/i, /application/i],
+      prompt: 'Focus on ATS readiness and resume optimization.',
+    },
+  ];
+
+  const sourceNote =
+    'Use public, reliable sources and cite URLs when referencing market, salary, or industry data.';
+
+  const runChatAgent = async ({
+    name,
+    role,
+    prompt,
+    question,
+  }: {
+    name: string;
+    role: string;
+    prompt: string;
+    question: string;
+  }) => {
+    const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${aiApiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: aiModel.trim() || 'gpt-4o',
+        temperature: 0.35,
+        messages: [
+          {
+            role: 'system',
+            content: `You are ${name}, a ${role}. ${prompt} ${sourceNote}`,
+          },
+          {
+            role: 'user',
+            content: `Context:\n${buildAgentContext()}\n\nQuestion:\n${question}`,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Agent ${name} failed (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    const reply = data.choices?.[0]?.message?.content?.trim() || '';
+    if (!reply) {
+      throw new Error(`Agent ${name} returned empty response.`);
+    }
+    return reply;
+  };
+
+  const buildOnDemandAgent = (question: string) => {
+    const short = question.split(/\s+/).slice(0, 4).join(' ');
+    return {
+      id: 'on-demand',
+      name: 'Nova',
+      role: `On-demand specialist for: ${short || 'the request'}`,
+      prompt:
+        'Answer the question directly and note any assumptions or missing inputs.',
+    };
+  };
+
+  const selectAgentsForQuestion = (question: string, forcedAgents: string[] = []) => {
+    const matches = agentCatalog.filter((agent) =>
+      agent.keywords.some((pattern) => pattern.test(question))
+    );
+    const forced = agentCatalog.filter((agent) => forcedAgents.includes(agent.id));
+    const combined = [...matches, ...forced].filter(
+      (agent, index, list) => list.findIndex((item) => item.id === agent.id) === index
+    );
+    if (matches.length === 0) {
+      return forced.length ? [...forced, buildOnDemandAgent(question)] : [buildOnDemandAgent(question)];
+    }
+    return combined;
+  };
+
+  const runAgentOrchestration = async (question: string, forcedAgents: string[] = []) => {
+    const agents = selectAgentsForQuestion(question, forcedAgents);
+    const results = await Promise.allSettled(
+      agents.map((agent) =>
+        runChatAgent({
+          name: agent.name,
+          role: agent.role,
+          prompt: agent.prompt,
+          question,
+        })
+      )
+    );
+
+    const agentReplies = results.map((result, index) => ({
+      agent: agents[index],
+      response:
+        result.status === 'fulfilled'
+          ? result.value
+          : `Unable to respond: ${result.reason instanceof Error ? result.reason.message : 'Error'}`,
+    }));
+
+    const successfulReplies = agentReplies.filter(
+      (reply) => !reply.response.startsWith('Unable to respond')
+    );
+    if (!successfulReplies.length) {
+      throw new Error('All agents failed to respond. Try again.');
+    }
+
+    const synthesis = await runChatAgent({
+      name: 'Cipher',
+      role: 'Orchestrator',
+      prompt:
+        'Coordinate with other agents. Combine their inputs into a single, concise answer. ' +
+        'If an agent is missing data, call it out and ask one clarifying question.',
+      question: `Agent responses:\n${successfulReplies
+        .map((reply) => `${reply.agent.name}: ${reply.response}`)
+        .join('\n\n')}\n\nUser question: ${question}`,
+    });
+
+    return { agentReplies, synthesis };
+  };
+
   const handleAgentChat = async () => {
     const question = agentQuestion.trim();
     if (!question) {
@@ -830,62 +1010,22 @@ export default function App() {
       return;
     }
 
-    const topSkills =
-      report.skillsPortfolio.length > 0
-        ? report.skillsPortfolio.slice(0, 3).map((skill) => skill.name).join(', ')
-        : resumeSkills.length
-          ? resumeSkills.slice(0, 3).map((skill) => skill.name).join(', ')
-          : 'Not detected';
-    const context = [
-      `Name: ${mergedProfile.name || 'Not provided'}`,
-      `Current role: ${mergedProfile.currentRole || 'Not provided'}`,
-      `Location: ${mergedProfile.location || 'Not provided'}`,
-      `Top skills: ${topSkills}`,
-      `Career goals: ${profile.careerGoals.join(', ') || 'Not provided'}`,
-      `Risk tolerance: ${profile.riskTolerance}`,
-      `AI literacy: ${profile.aiLiteracy}`,
-      `Market snapshot: ${report.marketSnapshot.summary || 'Not generated'}`,
-    ].join('\n');
-
-    const nextThread = [...agentThread, { role: 'user', content: question }].slice(-6);
+    const nextThread = [...agentThread, { role: 'user', content: question }].slice(-10);
     setAgentThread(nextThread);
     setAgentQuestion('');
-    setAgentChatStatus('Cipher is thinking...');
+    setAgentChatStatus('Coordinating agents...');
 
     try {
-      const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${aiApiKey.trim()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: aiModel.trim() || 'gpt-4o',
-          temperature: 0.4,
-          messages: [
-            {
-              role: 'system',
-              content:
-                `You are Cipher, a career strategist. Use the profile context below. ` +
-                `Be direct, realistic, and actionable. Cite public sources with URLs ` +
-                `when referencing market or salary data. Ask a clarifying question if needed.\n\n${context}`,
-            },
-            ...nextThread,
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Agent chat failed (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content?.trim() || '';
-      if (!reply) {
-        throw new Error('Agent did not return a response.');
-      }
-      setAgentThread([...nextThread, { role: 'assistant', content: reply }]);
+      const { agentReplies, synthesis } = await runAgentOrchestration(question);
+      const replyMessages = agentReplies.map((reply) => ({
+        role: 'assistant' as const,
+        content: `${reply.agent.name}: ${reply.response}`,
+      }));
+      setAgentThread([
+        ...nextThread,
+        ...replyMessages,
+        { role: 'assistant', content: `Cipher: ${synthesis}` },
+      ]);
       setAgentChatStatus('');
     } catch (error) {
       setAgentChatStatus(
@@ -908,53 +1048,22 @@ export default function App() {
       setMarketChatStatus('Add your OpenAI API key to enable market agent chat.');
       return;
     }
-
-    const marketContext = [
-      `Location: ${mergedProfile.location || 'Not provided'}`,
-      `Market indicators: ${report.marketSnapshot.summary || 'Not generated'}`,
-      `Hiring trends: ${report.marketSnapshot.bullets?.[0] || 'Not provided'}`,
-      `AI trends: ${report.marketSnapshot.bullets?.[3] || 'Not provided'}`,
-    ].join('\n');
-
-    const nextThread = [...marketThread, { role: 'user', content: question }].slice(-6);
+    const nextThread = [...marketThread, { role: 'user', content: question }].slice(-10);
     setMarketThread(nextThread);
     setMarketQuestion('');
-    setMarketChatStatus('Sentinel is analyzing market conditions...');
+    setMarketChatStatus('Coordinating agents...');
 
     try {
-      const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${aiApiKey.trim()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: aiModel.trim() || 'gpt-4o',
-          temperature: 0.3,
-          messages: [
-            {
-              role: 'system',
-              content:
-                `You are Sentinel, a market conditions analyst. Use the context below. ` +
-                `Be realistic, conservative, and cite public sources with URLs. ` +
-                `Ask one clarifying question if needed.\n\n${marketContext}`,
-            },
-            ...nextThread,
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Market agent failed (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content?.trim() || '';
-      if (!reply) {
-        throw new Error('Market agent did not return a response.');
-      }
-      setMarketThread([...nextThread, { role: 'assistant', content: reply }]);
+      const { agentReplies, synthesis } = await runAgentOrchestration(question, ['market']);
+      const replyMessages = agentReplies.map((reply) => ({
+        role: 'assistant' as const,
+        content: `${reply.agent.name}: ${reply.response}`,
+      }));
+      setMarketThread([
+        ...nextThread,
+        ...replyMessages,
+        { role: 'assistant', content: `Cipher: ${synthesis}` },
+      ]);
       setMarketChatStatus('');
     } catch (error) {
       setMarketChatStatus(
@@ -977,68 +1086,22 @@ export default function App() {
       setSkillsChatStatus('Add your OpenAI API key to enable skills agent chat.');
       return;
     }
-
-    const topSkillsContext = report.skillsPortfolio.length
-      ? report.skillsPortfolio
-          .slice(0, 6)
-          .map((skill) => `${skill.name} (${skill.category})`)
-          .join(', ')
-      : resumeSkills.length
-        ? resumeSkills.slice(0, 6).map((skill) => skill.name).join(', ')
-        : 'Not detected';
-    const aiRiskContext = report.skillsPortfolio.length
-      ? report.skillsPortfolio
-          .slice(0, 3)
-          .map((skill) => `${skill.name}: ${skill.aiRisk}`)
-          .join('; ')
-      : 'Not available (run AI analysis).';
-    const skillsContext = [
-      `Current role: ${mergedProfile.currentRole || 'Not provided'}`,
-      `Top skills: ${topSkillsContext}`,
-      `AI risk highlights: ${aiRiskContext}`,
-      `Career goals: ${profile.careerGoals.join(', ') || 'Not provided'}`,
-    ].join('\n');
-
-    const nextThread = [...skillsThread, { role: 'user', content: question }].slice(-6);
+    const nextThread = [...skillsThread, { role: 'user', content: question }].slice(-10);
     setSkillsThread(nextThread);
     setSkillsQuestion('');
-    setSkillsChatStatus('Aegis is analyzing your skills portfolio...');
+    setSkillsChatStatus('Coordinating agents...');
 
     try {
-      const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${aiApiKey.trim()}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          model: aiModel.trim() || 'gpt-4o',
-          temperature: 0.35,
-          messages: [
-            {
-              role: 'system',
-              content:
-                `You are Aegis, a skills strategist. Use the context below to evaluate ` +
-                `skills, risks, and next steps. Be concise and actionable. Cite public ` +
-                `sources with URLs when referencing market or salary data. Ask one ` +
-                `clarifying question if needed.\n\n${skillsContext}`,
-            },
-            ...nextThread,
-          ],
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Skills agent failed (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const reply = data.choices?.[0]?.message?.content?.trim() || '';
-      if (!reply) {
-        throw new Error('Skills agent did not return a response.');
-      }
-      setSkillsThread([...nextThread, { role: 'assistant', content: reply }]);
+      const { agentReplies, synthesis } = await runAgentOrchestration(question, ['skills']);
+      const replyMessages = agentReplies.map((reply) => ({
+        role: 'assistant' as const,
+        content: `${reply.agent.name}: ${reply.response}`,
+      }));
+      setSkillsThread([
+        ...nextThread,
+        ...replyMessages,
+        { role: 'assistant', content: `Cipher: ${synthesis}` },
+      ]);
       setSkillsChatStatus('');
     } catch (error) {
       setSkillsChatStatus(
@@ -1203,6 +1266,10 @@ export default function App() {
           sectionId="agent-chat"
           onLayout={handleSectionLayout}
         >
+          <Text style={styles.helper}>
+            Cipher routes your question to the best agent(s) or spins up an on-demand agent if
+            none match.
+          </Text>
           <Field
             label="Ask a question"
             value={agentQuestion}
