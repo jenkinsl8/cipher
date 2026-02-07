@@ -81,6 +81,11 @@ export type SkillInsight = {
   aiTools: string[];
   transformation: string;
   humanEdge: string;
+  industryOutlook: {
+    industries: string[];
+    notes: string;
+    sources: string[];
+  };
   valueMaintenance: string[];
   aiResistantSignals: string[];
   projections: {
@@ -97,12 +102,21 @@ export type ReportSection = {
   bullets?: string[];
 };
 
+export type CareerPathPosition = {
+  title: string;
+  fit: string;
+};
+
 export type CareerPathTier = {
   tier: string;
+  pathType: 'Traditional' | 'Alternate' | 'Moonshot';
+  feasibility: string;
+  positions: CareerPathPosition[];
   title: string;
   overview: string;
   riskReward: string;
   earningPotential: string;
+  demographicNotes: string[];
   threeYearPlan: {
     year1: string[];
     year2: string[];
@@ -139,6 +153,7 @@ export type NetworkReport = {
 export type ResumeAnalysis = {
   atsScore: number;
   atsReadiness: 'Low' | 'Moderate' | 'High';
+  atsSummary: string;
   wordCount: number;
   keywordCoverage: number;
   sectionsPresent: string[];

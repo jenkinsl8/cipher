@@ -12,111 +12,7 @@ const HEADING_MAP: { key: string; labels: string[] }[] = [
   { key: 'volunteer', labels: ['volunteer', 'community'] },
 ];
 
-const CATEGORY_KEYWORDS: Record<SkillCategory, string[]> = {
-  technical: [
-    'python',
-    'sql',
-    'javascript',
-    'typescript',
-    'cloud',
-    'aws',
-    'azure',
-    'gcp',
-    'kubernetes',
-    'devops',
-    'automation',
-    'machine learning',
-    'ai',
-    'data engineering',
-  ],
-  'soft/interpersonal': [
-    'communication',
-    'collaboration',
-    'stakeholder',
-    'negotiation',
-    'presentation',
-    'relationship',
-    'customer',
-    'sales',
-    'influence',
-  ],
-  leadership: [
-    'leadership',
-    'strategy',
-    'management',
-    'mentorship',
-    'vision',
-    'roadmap',
-    'executive',
-  ],
-  analytical: ['analysis', 'analytics', 'data', 'research', 'modeling', 'forecasting'],
-  creative: ['design', 'ux', 'ui', 'copywriting', 'content', 'brand', 'creative'],
-  'domain-specific': [
-    'finance',
-    'fintech',
-    'healthcare',
-    'legal',
-    'compliance',
-    'security',
-    'hr',
-    'operations',
-    'product',
-    'marketing',
-  ],
-};
-
-const INDUSTRY_KEYWORDS: { industry: string; keywords: string[] }[] = [
-  { industry: 'Fintech', keywords: ['fintech', 'bank', 'payments', 'lending', 'finance'] },
-  { industry: 'Healthcare', keywords: ['healthcare', 'clinical', 'hospital', 'medical'] },
-  { industry: 'SaaS', keywords: ['saas', 'software', 'subscription'] },
-  { industry: 'E-commerce', keywords: ['e-commerce', 'ecommerce', 'retail'] },
-  { industry: 'Education', keywords: ['education', 'edtech', 'learning'] },
-  { industry: 'Cybersecurity', keywords: ['security', 'cyber', 'risk', 'compliance'] },
-  { industry: 'Marketing', keywords: ['marketing', 'growth', 'brand', 'content'] },
-  { industry: 'Logistics', keywords: ['logistics', 'supply chain', 'operations'] },
-];
-
-const SKILL_KEYWORDS = [
-  'project management',
-  'program management',
-  'product management',
-  'strategic planning',
-  'data analysis',
-  'analytics',
-  'sql',
-  'python',
-  'excel',
-  'communication',
-  'leadership',
-  'stakeholder management',
-  'customer success',
-  'sales',
-  'marketing',
-  'design',
-  'ux',
-  'research',
-  'operations',
-  'finance',
-  'budgeting',
-  'forecasting',
-  'negotiation',
-  'process improvement',
-  'agile',
-  'scrum',
-  'roadmapping',
-  'go-to-market',
-  'user research',
-  'content strategy',
-  'copywriting',
-  'machine learning',
-  'ai',
-  'cloud',
-  'devops',
-  'security',
-  'compliance',
-  'hr',
-  'recruiting',
-];
+const DEFAULT_SKILL_CATEGORY: SkillCategory = 'domain-specific';
 
 const normalizeLine = (line: string) => line.trim().replace(/\s+/g, ' ');
 
@@ -278,41 +174,15 @@ const toTitleCase = (value: string) =>
     .map((word) => (word ? word[0].toUpperCase() + word.slice(1) : word))
     .join(' ');
 
-const categorizeSkill = (name: string): SkillCategory => {
-  const lower = name.toLowerCase();
-  let bestCategory: SkillCategory = 'domain-specific';
-  let bestScore = 0;
-
-  (Object.keys(CATEGORY_KEYWORDS) as SkillCategory[]).forEach((category) => {
-    const score = CATEGORY_KEYWORDS[category].filter((keyword) => lower.includes(keyword))
-      .length;
-    if (score > bestScore) {
-      bestScore = score;
-      bestCategory = category;
-    }
-  });
-
-  return bestCategory;
-};
-
 export const buildSkillInputsFromNames = (skills: string[]): SkillInput[] =>
   skills.map((skill, index) => ({
     id: `resume-${index}-${skill.toLowerCase().replace(/\s+/g, '-')}`,
     name: toTitleCase(skill),
-    category: categorizeSkill(skill),
+    category: DEFAULT_SKILL_CATEGORY,
     years: 1,
     evidence: '',
     enjoyment: 3,
   }));
-
-const extractIndustries = (text: string) => {
-  const lower = text.toLowerCase();
-  const matches = INDUSTRY_KEYWORDS.filter((entry) =>
-    entry.keywords.some((keyword) => lower.includes(keyword))
-  ).map((entry) => entry.industry);
-
-  return Array.from(new Set(matches));
-};
 
 export const parseResume = (text: string): ResumeExtraction => {
   const trimmed = text.trim();
@@ -360,17 +230,9 @@ export const parseResume = (text: string): ResumeExtraction => {
     : '';
   if (certifications) profile.certifications = certifications;
 
-  const industries = extractIndustries(trimmed);
-  if (industries.length) profile.industries = industries.join(', ');
-
   const skillLines = sections.skills || [];
-  const skillTokens = parseSkillsFromLines(skillLines);
-  let extractedSkills = Array.from(new Set(skillTokens.map((skill) => skill.toLowerCase())));
-
-  if (extractedSkills.length === 0) {
-    const lowerText = trimmed.toLowerCase();
-    extractedSkills = SKILL_KEYWORDS.filter((keyword) => lowerText.includes(keyword));
-  }
+  const skillTokens = parseSkillsFromLines(skillLines).map((skill) => skill.toLowerCase());
+  const extractedSkills = Array.from(new Set([...skillTokens]));
 
   const skills = buildSkillInputsFromNames(extractedSkills);
   const warnings: string[] = [];

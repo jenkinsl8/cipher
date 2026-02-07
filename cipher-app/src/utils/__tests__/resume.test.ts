@@ -35,7 +35,7 @@ Strategic planning, data analysis, SQL`;
     );
   });
 
-  it('falls back to keyword skills when a Skills section is missing', () => {
+  it('returns no skills when a Skills section is missing', () => {
     const resume = `Jamie Smith
 james@example.com
 Experience
@@ -43,10 +43,35 @@ Program Manager - Growth Team (2017-2023)
 - Led project management initiatives and data analysis.`;
 
     const result = parseResume(resume);
-    expect(result.skills.length).toBeGreaterThan(0);
-    expect(result.skills.map((skill) => skill.name)).toEqual(
-      expect.arrayContaining(['Project Management', 'Data Analysis'])
+    expect(result.skills.length).toBe(0);
+  });
+
+  it('includes both soft and hard skills when available', () => {
+    const resume = `Taylor Lee
+Summary
+Collaborative leader with strong communication and negotiation skills.
+Experience
+Program Manager (2018-2024)
+- Led cross-functional teams and stakeholder management.
+Skills
+SQL, Cloud, Leadership, Communication`;
+
+    const result = parseResume(resume);
+    const names = result.skills.map((skill) => skill.name);
+    expect(names).toEqual(
+      expect.arrayContaining(['Sql', 'Cloud', 'Leadership', 'Communication'])
     );
+  });
+
+  it('does not infer skills without a Skills section', () => {
+    const resume = `Morgan Reed
+Experience
+Senior Manager (2019-2024)
+- Led cross-functional teams and facilitated stakeholder workshops.
+- Presented quarterly results to executive leadership.`;
+
+    const result = parseResume(resume);
+    expect(result.skills.length).toBe(0);
   });
 });
 

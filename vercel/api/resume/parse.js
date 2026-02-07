@@ -1,4 +1,12 @@
 const JSZip = require('jszip');
+let pdfParse = null;
+try {
+  // Optional dependency for more reliable PDF text extraction on Vercel.
+  // eslint-disable-next-line global-require
+  pdfParse = require('pdf-parse');
+} catch (error) {
+  pdfParse = null;
+}
 
 const buildPrompt = (resumeText) => `Parse the resume text and return JSON with:
 {
@@ -74,7 +82,17 @@ const decodePdfString = (value) => {
 
 const decodeBase64 = (value) => Buffer.from(value, 'base64');
 
-const extractTextFromPdfBinary = (buffer) => {
+const extractTextFromPdfBinary = async (buffer) => {
+  if (pdfParse) {
+    try {
+      const parsed = await pdfParse(buffer);
+      if (parsed?.text?.trim()) {
+        return parsed.text.trim();
+      }
+    } catch (error) {
+      // Fall back to best-effort parsing below.
+    }
+  }
   const content = buffer.toString('latin1');
   const parts = [];
   const tjRegex = /\(([^()]*)\)\s*Tj/g;
@@ -133,7 +151,7 @@ const extractTextFromFile = async (file) => {
   const warnings = [];
 
   if (extension === 'pdf' || mimeType === 'application/pdf') {
-    const text = extractTextFromPdfBinary(buffer);
+    const text = await extractTextFromPdfBinary(buffer);
     if (!text) warnings.push('PDF text extraction returned empty output.');
     return { text, warnings };
   }
@@ -254,7 +272,7 @@ module.exports = async (req, res) => {
           },
           { role: 'user', content: prompt },
         ],
-        response_format: { type: 'json_schema', json_schema: jsonSchema },
+        text: { format: { type: 'json_schema', json_schema: jsonSchema } },
       }),
     });
 

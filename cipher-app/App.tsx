@@ -12,22 +12,28 @@ import {
   Switch,
   Text,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 
-import { generateCipherReport } from './src/engine/cipherEngine';
 import { parseLinkedInConnections } from './src/utils/csv';
+import { parseLinkedInWithOpenAI } from './src/utils/linkedInParser';
 import {
   extractTextFromDocBinary,
   extractTextFromDocxBinary,
   extractTextFromPdfBinary,
   parseResume,
 } from './src/utils/resume';
-import { parseResumeWithAI } from './src/utils/aiResumeParser';
+import {
+  parseResumeWithOpenAI,
+  parseResumeWithServerless,
+} from './src/utils/aiResumeParser';
+import { createEmptyReport, parseCipherReportWithOpenAI } from './src/utils/aiReport';
+import { extractJsonFromText } from './src/utils/aiResumeParser';
 import {
   AILiteracy,
   CareerGoal,
-  MarketSnapshot,
+  CipherReport,
   RiskTolerance,
   UserProfile,
   ResumeExtraction,
@@ -55,19 +61,10 @@ const initialProfile: UserProfile = {
   notes: '',
 };
 
-const initialMarket: MarketSnapshot = {
-  updatedAt: '',
-  indicators: '',
-  hiringTrends: '',
-  layoffs: '',
-  funding: '',
-  aiTrends: '',
-  sources: '',
-};
-
 const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
 const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
 const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
+const FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
@@ -91,6 +88,51 @@ const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   return new Uint8Array(Buffer.from(base64, 'base64'));
 };
 
+const normalizeBase64 = (value: string) => {
+  if (!value) return '';
+  const trimmed = value.trim();
+  const withoutPrefix = trimmed.includes('base64,')
+    ? trimmed.split('base64,')[1]
+    : trimmed;
+  const compact = withoutPrefix.replace(/\s/g, '');
+  const remainder = compact.length % 4;
+  if (remainder === 0) return compact;
+  if (remainder === 2) return `${compact}==`;
+  if (remainder === 3) return `${compact}=`;
+  return compact;
+};
+
+const blobToBase64 = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result?.toString() || '';
+      const base64 = result.split(',')[1] || '';
+      resolve(normalizeBase64(base64));
+    };
+    reader.onerror = () => reject(new Error('Failed to read file data.'));
+    reader.readAsDataURL(blob);
+  });
+
+const readAssetBase64 = async (asset: DocumentPicker.DocumentPickerAsset) => {
+  if (Platform.OS === 'web') {
+    const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
+    if (assetFile) {
+      return blobToBase64(assetFile);
+    }
+    if (asset.uri) {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      return blobToBase64(blob);
+    }
+  }
+
+  const rawBase64 = await FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+  return normalizeBase64(rawBase64);
+};
+
 const isHttpsContext = () => {
   if (Platform.OS !== 'web') return false;
   if (typeof window === 'undefined') return false;
@@ -100,11 +142,55 @@ const isHttpsContext = () => {
 const isLocalUrl = (value: string) =>
   value.includes('localhost') || value.includes('127.0.0.1');
 
+const mergeProfile = (
+  resumeProfile: Partial<UserProfile>,
+  manualProfile: UserProfile
+): UserProfile => {
+  const merged: UserProfile = { ...manualProfile };
+
+  (Object.keys(manualProfile) as Array<keyof UserProfile>).forEach((key) => {
+    const manualValue = manualProfile[key];
+    if (typeof manualValue === 'string') {
+      if (manualValue.trim()) {
+        merged[key] = manualValue;
+      } else if (resumeProfile[key]) {
+        merged[key] = resumeProfile[key] as UserProfile[typeof key];
+      }
+    } else {
+      merged[key] = manualValue;
+    }
+  });
+
+  (Object.keys(resumeProfile) as Array<keyof UserProfile>).forEach((key) => {
+    const manualValue = manualProfile[key];
+    const resumeValue = resumeProfile[key];
+    if (typeof manualValue === 'string' && manualValue.trim()) {
+      return;
+    }
+    if (resumeValue !== undefined) {
+      merged[key] = resumeValue as UserProfile[typeof key];
+    }
+  });
+
+  return merged;
+};
+
 export default function App() {
+  const { width } = useWindowDimensions();
+  const isCompact = width < 900;
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
-  const [market, setMarket] = useState<MarketSnapshot>(initialMarket);
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
+  const [linkedInFilePayload, setLinkedInFilePayload] = useState<{
+    name: string;
+    mimeType: string;
+    data: string;
+  } | null>(null);
+  const [linkedInUploadedAt, setLinkedInUploadedAt] = useState<number | null>(null);
+  const [linkedInAiStatus, setLinkedInAiStatus] = useState('');
+  const [linkedInAiEnabled, setLinkedInAiEnabled] = useState(true);
+  const [activeCard, setActiveCard] = useState('home');
+  const [showAtsDetail, setShowAtsDetail] = useState(false);
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
@@ -113,13 +199,59 @@ export default function App() {
     mimeType: string;
     data: string;
   } | null>(null);
+  const [resumeUploadedAt, setResumeUploadedAt] = useState<number | null>(null);
   const [aiModel, setAiModel] = useState('gpt-4o');
-  const [aiBaseUrl, setAiBaseUrl] = useState('');
+  const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com');
+  const [aiApiKey, setAiApiKey] = useState('');
+  const [aiParserMode, setAiParserMode] = useState<'openai' | 'serverless'>(
+    'openai'
+  );
   const [aiStatus, setAiStatus] = useState('');
   const [aiResumeExtraction, setAiResumeExtraction] = useState<ResumeExtraction | null>(null);
   const [useAiParser, setUseAiParser] = useState(false);
   const [autoParseEnabled, setAutoParseEnabled] = useState(true);
   const [lastAutoParsed, setLastAutoParsed] = useState('');
+  const [aiReport, setAiReport] = useState<CipherReport | null>(null);
+  const [aiReportStatus, setAiReportStatus] = useState('');
+  const [aiReportUpdatedAt, setAiReportUpdatedAt] = useState<number | null>(null);
+  const [aiReportLoading, setAiReportLoading] = useState(false);
+  const [lastAiReportKey, setLastAiReportKey] = useState('');
+  const [agentQuestion, setAgentQuestion] = useState('');
+  const [agentThread, setAgentThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [agentChatStatus, setAgentChatStatus] = useState('');
+  const [marketQuestion, setMarketQuestion] = useState('');
+  const [marketThread, setMarketThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [marketChatStatus, setMarketChatStatus] = useState('');
+  const [skillsQuestion, setSkillsQuestion] = useState('');
+  const [skillsThread, setSkillsThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [skillsChatStatus, setSkillsChatStatus] = useState('');
+  const [careerQuestion, setCareerQuestion] = useState('');
+  const [careerThread, setCareerThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [careerChatStatus, setCareerChatStatus] = useState('');
+  const [atsQuestion, setAtsQuestion] = useState('');
+  const [atsThread, setAtsThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [atsChatStatus, setAtsChatStatus] = useState('');
+  const [networkQuestion, setNetworkQuestion] = useState('');
+  const [networkThread, setNetworkThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [networkChatStatus, setNetworkChatStatus] = useState('');
+  const [resumeQuestion, setResumeQuestion] = useState('');
+  const [resumeThread, setResumeThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [resumeChatStatus, setResumeChatStatus] = useState('');
+  const [activeCareerPlanIndex, setActiveCareerPlanIndex] = useState(0);
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
@@ -133,39 +265,132 @@ export default function App() {
   }, [useAiParser, aiResumeExtraction, resumeText]);
   const resumeSkills = resumeExtraction.skills;
   const mergedProfile = useMemo(
-    () => ({ ...resumeExtraction.profile, ...profile }),
+    () => mergeProfile(resumeExtraction.profile, profile),
     [profile, resumeExtraction.profile]
   );
-  const report = useMemo(
-    () => generateCipherReport(mergedProfile, resumeSkills, market, connections, resumeText),
-    [mergedProfile, resumeSkills, market, connections, resumeText]
-  );
+  const emptyReport = useMemo(() => createEmptyReport(), []);
+  const report = aiReport || emptyReport;
+  const hasAiReport = !!aiReport;
+
+  const resumeReady = !!resumeText.trim() || !!resumeFilePayload?.data;
+  const linkedInReady = !!linkedInFilePayload?.data || connections.length > 0;
+
+  const highRiskCount = report.skillsPortfolio.filter((skill) =>
+    skill.aiRisk === 'High' || skill.aiRisk === 'Very High'
+  ).length;
+  const aiRiskLabel = hasAiReport
+    ? highRiskCount
+      ? `${highRiskCount} high-risk skills`
+      : 'No high-risk skills detected'
+    : 'Run AI analysis';
+  const marketSignal = hasAiReport
+    ? report.marketSnapshot.summary || 'AI market snapshot ready'
+    : 'Run AI analysis';
+
+  const navItems = [
+    { id: 'home', label: 'Main', visible: true },
+    { id: 'resume', label: 'Resume Upload', visible: true },
+    { id: 'linkedin', label: 'LinkedIn Upload', visible: true },
+    { id: 'market', label: 'Market Conditions', visible: resumeReady },
+    { id: 'skills', label: 'Skills Analysis', visible: resumeReady },
+    { id: 'career', label: 'Career Paths', visible: resumeReady },
+    { id: 'ats', label: 'ATS Analysis', visible: resumeReady },
+    { id: 'network', label: 'Network Analysis', visible: linkedInReady },
+    { id: 'agent-chat', label: 'Agent Console', visible: true },
+  ];
+
+  useEffect(() => {
+    const visibleIds = navItems.filter((item) => item.visible).map((item) => item.id);
+    if (!visibleIds.includes(activeCard)) {
+      setActiveCard('home');
+    }
+  }, [activeCard, resumeReady, linkedInReady]);
+
+  const formatExpiryDate = (uploadedAt: number) =>
+    new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
+  const formatTimestamp = (timestamp: number) =>
+    new Date(timestamp).toISOString().replace('T', ' ').slice(0, 16);
+  const buildReportKey = () => {
+    const baseText = resumeText.trim() || resumeFilePayload?.name || '';
+    const stamp = resumeUploadedAt ? String(resumeUploadedAt) : '';
+    return `${baseText.slice(0, 200)}|${stamp}|${resumeSkills.length}`;
+  };
 
   const missingFields = useMemo(() => {
     const missing: string[] = [];
-    if (!resumeText.trim()) missing.push('Resume upload');
+    if (!resumeText.trim() && !resumeFilePayload?.data) missing.push('Resume upload');
     if (!mergedProfile.currentRole?.trim()) missing.push('Current role in resume');
     if (!mergedProfile.location?.trim()) missing.push('Location');
     if (!profile.age.trim()) missing.push('Age');
     if (!profile.gender.trim()) missing.push('Gender');
     if (!profile.raceEthnicity.trim()) missing.push('Race/ethnicity');
-    if (resumeSkills.length === 0) missing.push('Skills in resume');
+    if (resumeSkills.length === 0 && !resumeFilePayload?.data)
+      missing.push('Skills in resume');
+    if (!hasAiReport) missing.push('Run AI analysis');
     return missing;
-  }, [profile, mergedProfile, resumeSkills, resumeText]);
+  }, [profile, mergedProfile, resumeSkills, resumeText, resumeFilePayload, hasAiReport]);
 
   useEffect(() => {
     setAiResumeExtraction(null);
     setAiStatus('');
     setUseAiParser(false);
     setLastAutoParsed('');
+    setAiReport(null);
+    setAiReportUpdatedAt(null);
+    setAiReportStatus('');
+    setLastAiReportKey('');
+    setShowAtsDetail(false);
   }, [resumeText]);
+
+  useEffect(() => {
+    if (!resumeUploadedAt || !resumeFilePayload) return;
+    const expireAt = resumeUploadedAt + FILE_TTL_MS;
+    const now = Date.now();
+    if (now >= expireAt) {
+      setResumeFilePayload(null);
+      setResumeFileName('');
+      setResumeUploadedAt(null);
+      setResumeStatus('Resume file expired after 7 days. Re-upload to refresh.');
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setResumeFilePayload(null);
+      setResumeFileName('');
+      setResumeUploadedAt(null);
+      setResumeStatus('Resume file expired after 7 days. Re-upload to refresh.');
+    }, expireAt - now);
+    return () => clearTimeout(timeout);
+  }, [resumeUploadedAt, resumeFilePayload]);
+
+  useEffect(() => {
+    if (!linkedInUploadedAt || !linkedInFilePayload) return;
+    const expireAt = linkedInUploadedAt + FILE_TTL_MS;
+    const now = Date.now();
+    if (now >= expireAt) {
+      setLinkedInFilePayload(null);
+      setLinkedInUploadedAt(null);
+      setLinkedInStatus('LinkedIn file expired after 7 days. Re-upload to refresh.');
+      return;
+    }
+    const timeout = setTimeout(() => {
+      setLinkedInFilePayload(null);
+      setLinkedInUploadedAt(null);
+      setLinkedInStatus('LinkedIn file expired after 7 days. Re-upload to refresh.');
+    }, expireAt - now);
+    return () => clearTimeout(timeout);
+  }, [linkedInUploadedAt, linkedInFilePayload]);
+
+  useEffect(() => {
+    setLinkedInStatus('');
+    if (!linkedInAiEnabled || !linkedInFilePayload || !aiApiKey.trim()) return;
+    const timer = setTimeout(() => {
+      handleLinkedInAiParse();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [linkedInFilePayload, linkedInAiEnabled, aiApiKey, aiModel, aiBaseUrl]);
 
   const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
-  };
-
-  const updateMarket = <K extends keyof MarketSnapshot>(key: K, value: MarketSnapshot[K]) => {
-    setMarket((prev) => ({ ...prev, [key]: value }));
   };
 
   const toggleGoal = (goal: CareerGoal) => {
@@ -182,19 +407,72 @@ export default function App() {
     setLinkedInStatus('');
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'text/plain', 'application/vnd.ms-excel'],
+        type: ['*/*'],
         copyToCacheDirectory: true,
       });
       if (result.canceled) return;
       const asset = result.assets && result.assets[0];
       if (!asset?.uri) return;
-      const content = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.UTF8,
+      const base64 = await readAssetBase64(asset);
+      if (!base64) {
+        setLinkedInStatus('Could not read the LinkedIn file.');
+        return;
+      }
+      setLinkedInFilePayload({
+        name: asset.name || 'connections',
+        mimeType: asset.mimeType || 'application/octet-stream',
+        data: base64,
       });
-      setLinkedInCsv(content);
-      setLinkedInStatus(`Loaded ${content.split('\n').length} lines.`);
+      setLinkedInUploadedAt(Date.now());
+      setLinkedInStatus('LinkedIn file uploaded. Parsing with AI agent...');
     } catch (error) {
-      setLinkedInStatus('Could not load the CSV file.');
+      setLinkedInStatus('Could not load the LinkedIn file.');
+    }
+  };
+
+  const handleLinkedInAiParse = async () => {
+    if (!linkedInFilePayload) return;
+    if (!aiApiKey.trim()) {
+      setLinkedInAiStatus('Add your OpenAI API key to enable LinkedIn AI parsing.');
+      return;
+    }
+
+    setLinkedInAiStatus('Parsing LinkedIn file with AI agent...');
+    try {
+      const parsed = await parseLinkedInWithOpenAI({
+        apiKey: aiApiKey.trim(),
+        model: aiModel.trim() || 'gpt-4o',
+        baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
+        file: linkedInFilePayload,
+      });
+      if (parsed.connections?.length) {
+        const rows = parsed.connections
+          .map((connection) =>
+            [
+              connection.firstName,
+              connection.lastName,
+              connection.email,
+              connection.company,
+              connection.position,
+              connection.connectedOn,
+              connection.location,
+            ].join(',')
+          )
+          .join('\n');
+        const csv = `First Name,Last Name,Email Address,Company,Position,Connected On,Location\n${rows}`;
+        setLinkedInCsv(csv);
+        setLinkedInAiStatus(
+          `Parsed ${parsed.connections.length} connections with AI agent.`
+        );
+      } else {
+        setLinkedInAiStatus('AI agent did not find any connections.');
+      }
+    } catch (error) {
+      setLinkedInAiStatus(
+        error instanceof Error
+          ? error.message
+          : 'LinkedIn AI parsing failed.'
+      );
     }
   };
 
@@ -228,6 +506,12 @@ export default function App() {
 
       if (extension === 'pdf' || mimeType === 'application/pdf') {
         try {
+          const base64 = await readAssetBase64(asset);
+          const normalized = normalizeBase64(base64);
+          if (!normalized) {
+            setResumeStatus('Could not read PDF data for AI parsing.');
+            return;
+          }
           const binary = await readAssetBinary(asset);
           if (!binary?.length) {
             setResumeStatus('Could not read PDF data. Paste resume text.');
@@ -236,20 +520,25 @@ export default function App() {
           setResumeFilePayload({
             name,
             mimeType: mimeType || 'application/pdf',
-            data: Buffer.from(binary).toString('base64'),
+            data: normalized,
           });
+          setResumeUploadedAt(Date.now());
           const content = await extractTextFromPdfBinary(binary);
-          if (!content) {
-            setResumeStatus('PDF detected, but no text was extracted. Paste resume text.');
-            return;
+          if (content) {
+            setResumeText(content);
+            setResumeStatus(
+              `Extracted text from PDF (${content.split('\n').length} lines).`
+            );
+          } else {
+            setResumeText('');
+            setResumeStatus(
+              'PDF uploaded. AI will parse the attachment directly.'
+            );
           }
-          setResumeText(content);
-          setResumeStatus(
-            `Extracted text from PDF (${content.split('\n').length} lines).`
-          );
           return;
         } catch (error) {
-          setResumeStatus('PDF extraction failed. Paste resume text instead.');
+          setResumeText('');
+          setResumeStatus('PDF uploaded. AI will parse the attachment directly.');
           return;
         }
       }
@@ -260,6 +549,12 @@ export default function App() {
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ) {
         try {
+          const base64 = await readAssetBase64(asset);
+          const normalized = normalizeBase64(base64);
+          if (!normalized) {
+            setResumeStatus('Could not read DOCX data for AI parsing.');
+            return;
+          }
           const binary = await readAssetBinary(asset);
           if (!binary?.length) {
             setResumeStatus('Could not read DOCX data. Paste resume text.');
@@ -270,26 +565,37 @@ export default function App() {
             mimeType:
               mimeType ||
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            data: Buffer.from(binary).toString('base64'),
+            data: normalized,
           });
+          setResumeUploadedAt(Date.now());
           const content = await extractTextFromDocxBinary(binary);
-          if (!content) {
-            setResumeStatus('DOCX detected, but no text was extracted. Paste resume text.');
-            return;
+          if (content) {
+            setResumeText(content);
+            setResumeStatus(
+              `Extracted text from DOCX (${content.split('\n').length} lines).`
+            );
+          } else {
+            setResumeText('');
+            setResumeStatus(
+              'DOCX uploaded. AI will parse the attachment directly.'
+            );
           }
-          setResumeText(content);
-          setResumeStatus(
-            `Extracted text from DOCX (${content.split('\n').length} lines).`
-          );
           return;
         } catch (error) {
-          setResumeStatus('DOCX extraction failed. Paste resume text instead.');
+          setResumeText('');
+          setResumeStatus('DOCX uploaded. AI will parse the attachment directly.');
           return;
         }
       }
 
       if (extension === 'doc' || mimeType === 'application/msword') {
         try {
+          const base64 = await readAssetBase64(asset);
+          const normalized = normalizeBase64(base64);
+          if (!normalized) {
+            setResumeStatus('Could not read DOC data for AI parsing.');
+            return;
+          }
           const binary = await readAssetBinary(asset);
           if (!binary?.length) {
             setResumeStatus('Could not read DOC data. Paste resume text.');
@@ -298,20 +604,25 @@ export default function App() {
           setResumeFilePayload({
             name,
             mimeType: mimeType || 'application/msword',
-            data: Buffer.from(binary).toString('base64'),
+            data: normalized,
           });
+          setResumeUploadedAt(Date.now());
           const content = await extractTextFromDocBinary(binary);
-          if (!content) {
-            setResumeStatus('DOC detected, but no text was extracted. Paste resume text.');
-            return;
+          if (content) {
+            setResumeText(content);
+            setResumeStatus(
+              'Extracted best-effort text from DOC. Review and paste if needed.'
+            );
+          } else {
+            setResumeText('');
+            setResumeStatus(
+              'DOC uploaded. AI will parse the attachment directly.'
+            );
           }
-          setResumeText(content);
-          setResumeStatus(
-            'Extracted best-effort text from DOC. Review and paste if needed.'
-          );
           return;
         } catch (error) {
-          setResumeStatus('DOC extraction failed. Paste resume text instead.');
+          setResumeText('');
+          setResumeStatus('DOC uploaded. AI will parse the attachment directly.');
           return;
         }
       }
@@ -326,11 +637,18 @@ export default function App() {
       const content = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
+      const base64 = await readAssetBase64(asset);
+      const normalized = normalizeBase64(base64);
+      if (!normalized) {
+        setResumeStatus('Could not read file data for AI parsing.');
+        return;
+      }
       setResumeFilePayload({
         name,
         mimeType: mimeType || 'text/plain',
-        data: Buffer.from(content, 'utf8').toString('base64'),
+        data: normalized,
       });
+      setResumeUploadedAt(Date.now());
       setResumeText(content);
       setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
     } catch (error) {
@@ -343,29 +661,73 @@ export default function App() {
     const text = resumeText.trim();
     const hasText = text.length >= 80;
     const hasFile = !!resumeFilePayload?.data;
-    if (!hasText && !hasFile) return;
-    if (text === lastAutoParsed) return;
-    if (!aiBaseUrl.trim()) return;
+    if (aiParserMode === 'openai') {
+      if (!hasText && !hasFile) return;
+      if (!aiApiKey.trim()) return;
+    } else {
+      if (!hasText && !hasFile) return;
+      if (!aiBaseUrl.trim()) return;
+    }
+    const autoKey = text || resumeFilePayload?.name || '';
+    if (autoKey && autoKey === lastAutoParsed) return;
     const timer = setTimeout(() => {
       handleAiResumeParse(true);
     }, 800);
     return () => clearTimeout(timer);
-  }, [resumeText, resumeFilePayload, autoParseEnabled, aiBaseUrl, aiModel, lastAutoParsed]);
+  }, [
+    resumeText,
+    resumeFilePayload,
+    autoParseEnabled,
+    aiBaseUrl,
+    aiModel,
+    aiApiKey,
+    aiParserMode,
+    lastAutoParsed,
+  ]);
+
+  useEffect(() => {
+    const resumeReady = !!resumeText.trim() || resumeSkills.length > 0;
+    if (!resumeReady) return;
+    if (aiParserMode !== 'openai' || !aiApiKey.trim()) return;
+    if (aiReportLoading) return;
+    const reportKey = buildReportKey();
+    if (reportKey === lastAiReportKey) return;
+    const timer = setTimeout(() => {
+      handleAiReportGenerate(true);
+    }, 900);
+    return () => clearTimeout(timer);
+  }, [
+    resumeText,
+    resumeSkills,
+    aiApiKey,
+    aiBaseUrl,
+    aiModel,
+    aiParserMode,
+    aiReportLoading,
+    lastAiReportKey,
+    resumeFilePayload,
+    resumeUploadedAt,
+  ]);
 
   const handleAiResumeParse = async (isAuto = false) => {
-    if (!resumeText.trim() && !resumeFilePayload?.data) {
+    if (aiParserMode === 'openai' && !resumeText.trim() && !resumeFilePayload?.data) {
       if (!isAuto) {
         setAiStatus('Add resume text before running the AI parser.');
       }
       return;
     }
-    if (!aiBaseUrl.trim()) {
+    if (aiParserMode === 'serverless' && !aiBaseUrl.trim()) {
       if (!isAuto) {
         setAiStatus('Add the AI parser URL before running.');
       }
       return;
     }
-    if (isHttpsContext() && aiBaseUrl.startsWith('http://') && !isLocalUrl(aiBaseUrl)) {
+    if (
+      aiParserMode === 'serverless' &&
+      isHttpsContext() &&
+      aiBaseUrl.startsWith('http://') &&
+      !isLocalUrl(aiBaseUrl)
+    ) {
       if (!isAuto) {
         setAiStatus(
           'AI parser URL must be https when the app is served over https.'
@@ -373,20 +735,39 @@ export default function App() {
       }
       return;
     }
+    if (aiParserMode === 'openai' && !aiApiKey.trim()) {
+      if (!isAuto) {
+        setAiStatus('Add your OpenAI API key before running.');
+      }
+      return;
+    }
 
     if (!isAuto) {
-      setAiStatus('Parsing resume with serverless AI...');
+      setAiStatus(
+        aiParserMode === 'openai'
+          ? 'Parsing resume with OpenAI...'
+          : 'Parsing resume with serverless AI...'
+      );
     }
     try {
-      const extraction = await parseResumeWithAI({
-        model: aiModel.trim() || 'gpt-4o',
-        baseUrl: aiBaseUrl.trim(),
-        resumeText,
-        file: resumeFilePayload || undefined,
-      });
+      const extraction =
+        aiParserMode === 'openai'
+          ? await parseResumeWithOpenAI({
+              apiKey: aiApiKey.trim(),
+              model: aiModel.trim() || 'gpt-4o',
+              baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
+              resumeText,
+              file: resumeFilePayload || undefined,
+            })
+          : await parseResumeWithServerless({
+              model: aiModel.trim() || 'gpt-4o',
+              baseUrl: aiBaseUrl.trim(),
+              resumeText,
+              file: resumeFilePayload || undefined,
+            });
       setAiResumeExtraction(extraction);
       setUseAiParser(true);
-      setLastAutoParsed(resumeText.trim());
+      setLastAutoParsed(resumeText.trim() || resumeFilePayload?.name || '');
       if (!isAuto) {
         setAiStatus('AI parsing complete. Review extracted data.');
       }
@@ -405,22 +786,387 @@ export default function App() {
     }
   };
 
-  const agentStatus = [
-    { name: 'Cipher', role: 'Career strategist', status: 'Active' },
+  const handleAiReportGenerate = async (isAuto = false) => {
+    if (aiReportLoading) return;
+    const reportKey = buildReportKey();
+    const resumeReady = !!resumeText.trim() || resumeSkills.length > 0;
+    if (aiParserMode !== 'openai') {
+      if (!isAuto) {
+        setAiReportStatus('AI analysis requires OpenAI mode. Switch to OpenAI API key.');
+      }
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      if (!isAuto) {
+        setAiReportStatus('Add your OpenAI API key to run AI analysis.');
+      }
+      return;
+    }
+    if (!resumeReady) {
+      if (!isAuto) {
+        setAiReportStatus('Upload a resume to generate AI analysis.');
+      }
+      return;
+    }
+    if (isAuto && reportKey === lastAiReportKey) return;
+
+    setAiReportStatus('Running AI analysis agents...');
+    setAiReportLoading(true);
+    try {
+      const analysis = await parseCipherReportWithOpenAI({
+        apiKey: aiApiKey.trim(),
+        model: aiModel.trim() || 'gpt-4o',
+        baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
+        profile: mergedProfile,
+        resumeText,
+        skills: resumeSkills,
+        connections,
+      });
+      setAiReport(analysis);
+      setAiReportUpdatedAt(Date.now());
+      setLastAiReportKey(reportKey);
+      setAiReportStatus('AI analysis ready.');
+    } catch (error) {
+      if (!isAuto) {
+        setAiReportStatus(
+          error instanceof Error ? error.message : 'AI analysis failed. Try again.'
+        );
+      }
+    } finally {
+      setAiReportLoading(false);
+    }
+  };
+
+  const buildAgentContext = () => {
+    const trimmedResume = resumeText.trim();
+    const truncatedResume =
+      trimmedResume.length > 4000
+        ? `${trimmedResume.slice(0, 4000)}\n...[truncated]`
+        : trimmedResume;
+    const skillList = resumeSkills.length
+      ? resumeSkills.map((skill) => skill.name).join(', ')
+      : 'Not detected';
+    return [
+      `Profile: ${JSON.stringify(mergedProfile, null, 2)}`,
+      `Resume text: ${truncatedResume || 'Not available'}`,
+      `Skills: ${skillList}`,
+      `LinkedIn connections: ${connections.length}`,
+    ].join('\n');
+  };
+
+  const agentCatalog = [
+    {
+      id: 'market',
+      name: 'Sentinel',
+      role: 'Market conditions analyst',
+      keywords: [
+        /market/i,
+        /hiring/i,
+        /layoff/i,
+        /economy|economic/i,
+        /salary|compensation|wage/i,
+        /trend|outlook|inflation/i,
+      ],
+      prompt:
+        'Focus on hiring signals, compensation benchmarks, and regional trends.',
+    },
+    {
+      id: 'skills',
+      name: 'Aegis',
+      role: 'Skills and AI impact strategist',
+      keywords: [/skill/i, /upskill|reskill/i, /portfolio|competenc/i, /ai risk/i],
+      prompt: 'Focus on skills gaps, prioritization, and AI impact.',
+    },
+    {
+      id: 'career',
+      name: 'Atlas',
+      role: 'Career path strategist',
+      keywords: [/career/i, /path|role|pivot|transition/i, /promotion|growth/i],
+      prompt: 'Focus on realistic career paths and transition steps.',
+    },
+    {
+      id: 'network',
+      name: 'Nexus',
+      role: 'Networking strategist',
+      keywords: [/network/i, /linkedin/i, /referral/i, /recruiter|hiring manager/i],
+      prompt: 'Focus on networking strategy and outreach tactics.',
+    },
+    {
+      id: 'ats',
+      name: 'Helix',
+      role: 'Resume and ATS analyst',
+      keywords: [/resume/i, /ats/i, /cv/i, /application/i],
+      prompt: 'Focus on ATS readiness and resume optimization.',
+    },
+  ];
+
+  const sourceNote =
+    'Use public, reliable sources and cite URLs when referencing market, salary, or industry data.';
+
+  const runChatAgent = async ({
+    name,
+    role,
+    prompt,
+    question,
+  }: {
+    name: string;
+    role: string;
+    prompt: string;
+    question: string;
+  }) => {
+    const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${aiApiKey.trim()}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        model: aiModel.trim() || 'gpt-4o',
+        temperature: 0.35,
+        messages: [
+          {
+            role: 'system',
+            content: `You are ${name}, a ${role}. ${prompt} ${sourceNote}`,
+          },
+          {
+            role: 'user',
+            content: `Context:\n${buildAgentContext()}\n\nQuestion:\n${question}`,
+          },
+        ],
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Agent ${name} failed (${response.status}): ${errorText}`);
+    }
+
+    const data = await response.json();
+    const reply = data.choices?.[0]?.message?.content?.trim() || '';
+    if (!reply) {
+      throw new Error(`Agent ${name} returned empty response.`);
+    }
+    return reply;
+  };
+
+  const buildOnDemandAgent = (question: string) => {
+    const short = question.split(/\s+/).slice(0, 4).join(' ');
+    return {
+      id: 'on-demand',
+      name: 'Nova',
+      role: `On-demand specialist for: ${short || 'the request'}`,
+      prompt:
+        'Answer the question directly and note any assumptions or missing inputs.',
+    };
+  };
+
+  const selectAgentsForQuestion = (question: string, forcedAgents: string[] = []) => {
+    const matches = agentCatalog.filter((agent) =>
+      agent.keywords.some((pattern) => pattern.test(question))
+    );
+    const forced = agentCatalog.filter((agent) => forcedAgents.includes(agent.id));
+    const combined = [...matches, ...forced].filter(
+      (agent, index, list) => list.findIndex((item) => item.id === agent.id) === index
+    );
+    if (matches.length === 0) {
+      return forced.length ? [...forced, buildOnDemandAgent(question)] : [buildOnDemandAgent(question)];
+    }
+    return combined;
+  };
+
+  const runAgentOrchestration = async (question: string, forcedAgents: string[] = []) => {
+    const agents = selectAgentsForQuestion(question, forcedAgents);
+    const results = await Promise.allSettled(
+      agents.map((agent) =>
+        runChatAgent({
+          name: agent.name,
+          role: agent.role,
+          prompt: agent.prompt,
+          question,
+        })
+      )
+    );
+
+    const agentReplies = results.map((result, index) => ({
+      agent: agents[index],
+      response:
+        result.status === 'fulfilled'
+          ? result.value
+          : `Unable to respond: ${result.reason instanceof Error ? result.reason.message : 'Error'}`,
+    }));
+
+    const successfulReplies = agentReplies.filter(
+      (reply) => !reply.response.startsWith('Unable to respond')
+    );
+    if (!successfulReplies.length) {
+      throw new Error('All agents failed to respond. Try again.');
+    }
+
+    const synthesis = await runChatAgent({
+      name: 'Cipher',
+      role: 'Orchestrator',
+      prompt:
+        'Coordinate with other agents. Combine their inputs into a single, concise answer. ' +
+        'If an agent is missing data, call it out and ask one clarifying question.',
+      question: `Agent responses:\n${successfulReplies
+        .map((reply) => `${reply.agent.name}: ${reply.response}`)
+        .join('\n\n')}\n\nUser question: ${question}`,
+    });
+
+    return { agentReplies, synthesis };
+  };
+
+  const handleCardChat = async ({
+    question,
+    setStatus,
+    setThread,
+    setQuestion,
+    thread,
+    forcedAgents,
+  }: {
+    question: string;
+    setStatus: (value: string) => void;
+    setThread: React.Dispatch<
+      React.SetStateAction<Array<{ role: 'user' | 'assistant'; content: string }>>
+    >;
+    setQuestion: (value: string) => void;
+    thread: Array<{ role: 'user' | 'assistant'; content: string }>;
+    forcedAgents?: string[];
+  }) => {
+    if (!question.trim()) {
+      setStatus('Add a question before sending.');
+      return;
+    }
+    if (aiParserMode !== 'openai') {
+      setStatus('Agent chat requires OpenAI mode. Switch to OpenAI API key.');
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      setStatus('Add your OpenAI API key to enable agent chat.');
+      return;
+    }
+
+    const nextThread = [...thread, { role: 'user', content: question.trim() }].slice(-10);
+    setThread(nextThread);
+    setQuestion('');
+    setStatus('Coordinating agents...');
+
+    try {
+      const { agentReplies, synthesis } = await runAgentOrchestration(
+        question.trim(),
+        forcedAgents || []
+      );
+      const replyMessages = agentReplies.map((reply) => ({
+        role: 'assistant' as const,
+        content: `${reply.agent.name}: ${reply.response}`,
+      }));
+      setThread([
+        ...nextThread,
+        ...replyMessages,
+        { role: 'assistant', content: `Cipher: ${synthesis}` },
+      ]);
+      setStatus('');
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : 'Agent chat failed. Try again.');
+    }
+  };
+
+  const handleAgentChat = async () => {
+    await handleCardChat({
+      question: agentQuestion,
+      setStatus: setAgentChatStatus,
+      setThread: setAgentThread,
+      setQuestion: setAgentQuestion,
+      thread: agentThread,
+    });
+  };
+
+  const handleMarketAgentChat = async () => {
+    await handleCardChat({
+      question: marketQuestion,
+      setStatus: setMarketChatStatus,
+      setThread: setMarketThread,
+      setQuestion: setMarketQuestion,
+      thread: marketThread,
+      forcedAgents: ['market'],
+    });
+  };
+
+  const handleSkillsAgentChat = async () => {
+    await handleCardChat({
+      question: skillsQuestion,
+      setStatus: setSkillsChatStatus,
+      setThread: setSkillsThread,
+      setQuestion: setSkillsQuestion,
+      thread: skillsThread,
+      forcedAgents: ['skills'],
+    });
+  };
+
+  const handleCareerAgentChat = async () => {
+    await handleCardChat({
+      question: careerQuestion,
+      setStatus: setCareerChatStatus,
+      setThread: setCareerThread,
+      setQuestion: setCareerQuestion,
+      thread: careerThread,
+      forcedAgents: ['career'],
+    });
+  };
+
+  const handleAtsAgentChat = async () => {
+    await handleCardChat({
+      question: atsQuestion,
+      setStatus: setAtsChatStatus,
+      setThread: setAtsThread,
+      setQuestion: setAtsQuestion,
+      thread: atsThread,
+      forcedAgents: ['ats'],
+    });
+  };
+
+  const handleNetworkAgentChat = async () => {
+    await handleCardChat({
+      question: networkQuestion,
+      setStatus: setNetworkChatStatus,
+      setThread: setNetworkThread,
+      setQuestion: setNetworkQuestion,
+      thread: networkThread,
+      forcedAgents: ['network'],
+    });
+  };
+
+  const handleResumeAgentChat = async () => {
+    await handleCardChat({
+      question: resumeQuestion,
+      setStatus: setResumeChatStatus,
+      setThread: setResumeThread,
+      setQuestion: setResumeQuestion,
+      thread: resumeThread,
+      forcedAgents: ['ats'],
+    });
+  };
+
+  const agentRoster = [
+    {
+      name: 'Cipher',
+      role: 'Career strategist',
+      status: hasAiReport ? 'Synced' : 'Waiting for AI analysis',
+    },
     {
       name: 'Sentinel',
       role: 'Market conditions',
-      status: market.updatedAt ? 'Synced' : 'Needs data',
+      status: hasAiReport ? 'Synced' : 'Waiting for AI analysis',
     },
     {
       name: 'Aegis',
-      role: 'AI impact',
-      status: resumeSkills.length ? 'Ready' : 'Waiting for skills',
+      role: 'Skills & AI impact',
+      status: hasAiReport ? 'Ready' : 'Waiting for AI analysis',
     },
     {
       name: 'Atlas',
       role: 'Career paths',
-      status: mergedProfile.currentRole ? 'Ready' : 'Waiting for role',
+      status: hasAiReport ? 'Ready' : 'Waiting for AI analysis',
     },
     {
       name: 'Nexus',
@@ -429,18 +1175,195 @@ export default function App() {
     },
   ];
 
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Cipher Career Strategist</Text>
-        <Text style={styles.subtitle}>
-          Web + mobile intelligence hub for AI-ready career strategy.
-        </Text>
+  useEffect(() => {
+    if (activeCareerPlanIndex >= report.careerPaths.length) {
+      setActiveCareerPlanIndex(0);
+    }
+  }, [activeCareerPlanIndex, report.careerPaths.length]);
 
-        <Section title="Agent Lineup" subtitle="Multi-agent workflow status">
+  const renderChatSection = ({
+    title,
+    question,
+    setQuestion,
+    onSend,
+    status,
+    thread,
+    buttonLabel,
+    placeholder,
+  }: {
+    title: string;
+    question: string;
+    setQuestion: (value: string) => void;
+    onSend: () => void;
+    status: string;
+    thread: Array<{ role: 'user' | 'assistant'; content: string }>;
+    buttonLabel: string;
+    placeholder: string;
+  }) => (
+    <View style={styles.chatSection}>
+      <Text style={styles.reportSubheading}>{title}</Text>
+      <Field
+        label={title}
+        value={question}
+        onChangeText={setQuestion}
+        placeholder={placeholder}
+        multiline
+      />
+      <Pressable style={styles.primaryButton} onPress={onSend}>
+        <Text style={styles.primaryButtonText}>{buttonLabel}</Text>
+      </Pressable>
+      {status ? <Text style={styles.helper}>{status}</Text> : null}
+      {thread.length ? (
+        thread.map((message, index) => (
+          <View key={`${message.role}-${index}`} style={styles.chatBubble}>
+            <Text style={styles.chatRole}>
+              {message.role === 'user'
+                ? 'You'
+                : message.content.split(':')[0] || 'Agent'}
+            </Text>
+            <Text style={styles.chatText}>
+              {message.role === 'user'
+                ? message.content
+                : message.content.split(':').slice(1).join(':').trim() || message.content}
+            </Text>
+          </View>
+        ))
+      ) : (
+        <Text style={styles.helper}>No agent responses yet.</Text>
+      )}
+    </View>
+  );
+
+  const renderActiveCard = () => {
+    if (activeCard === 'home') {
+      return (
+        <Card
+          title="Main Screen"
+          subtitle="Upload your resume and LinkedIn file to unlock the AI analysis cards."
+        >
+          <View style={styles.cardRow}>
+            <View style={styles.reportCard}>
+              <Text style={styles.reportTitle}>Resume Upload</Text>
+              <Text style={styles.helper}>
+                Supports PDF, DOCX, DOC, or plain text.
+              </Text>
+              <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
+                <Text style={styles.secondaryButtonText}>
+                  {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
+                </Text>
+              </Pressable>
+              {resumeFileName ? (
+                <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
+              ) : null}
+              {resumeUploadedAt ? (
+                <Text style={styles.helper}>
+                  File expires on {formatExpiryDate(resumeUploadedAt)}.
+                </Text>
+              ) : null}
+              {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
+            </View>
+            <View style={styles.reportCard}>
+              <Text style={styles.reportTitle}>LinkedIn Upload</Text>
+              <Text style={styles.helper}>Upload any LinkedIn export format.</Text>
+              <Pressable style={styles.secondaryButton} onPress={handleLinkedInPick}>
+                <Text style={styles.secondaryButtonText}>
+                  {Platform.OS === 'web' ? 'Upload LinkedIn file' : 'Pick LinkedIn file'}
+                </Text>
+              </Pressable>
+              {linkedInStatus ? <Text style={styles.helper}>{linkedInStatus}</Text> : null}
+              {linkedInUploadedAt ? (
+                <Text style={styles.helper}>
+                  File expires on {formatExpiryDate(linkedInUploadedAt)}.
+                </Text>
+              ) : null}
+              {linkedInAiStatus ? (
+                <Text style={styles.helper}>{linkedInAiStatus}</Text>
+              ) : null}
+              {connections.length ? (
+                <Text style={styles.helper}>
+                  Parsed {connections.length} connections.
+                </Text>
+              ) : null}
+            </View>
+          </View>
+
+          <Text style={styles.label}>AI analysis</Text>
+          <Pressable style={styles.primaryButton} onPress={() => handleAiReportGenerate(false)}>
+            <Text style={styles.primaryButtonText}>
+              {aiReportLoading ? 'Running AI analysis...' : 'Run AI analysis'}
+            </Text>
+          </Pressable>
+          {aiReportUpdatedAt ? (
+            <Text style={styles.helper}>
+              Last updated {formatTimestamp(aiReportUpdatedAt)}.
+            </Text>
+          ) : null}
+          {aiReportStatus ? <Text style={styles.helper}>{aiReportStatus}</Text> : null}
+
+          <Text style={styles.label}>Status snapshot</Text>
+          <View style={styles.dashboardGrid}>
+            <DashboardCard
+              label="Resume"
+              value={resumeFileName ? 'Uploaded' : 'Missing'}
+              meta={resumeFileName || 'Upload resume to begin'}
+            />
+            <DashboardCard
+              label="AI Analysis"
+              value={hasAiReport ? 'Generated' : 'Not run'}
+              meta={
+                aiReportUpdatedAt
+                  ? `Updated ${formatTimestamp(aiReportUpdatedAt)}`
+                  : aiReportStatus || 'Run AI analysis'
+              }
+            />
+            <DashboardCard
+              label="LinkedIn"
+              value={connections.length ? `${connections.length} connections` : 'Not parsed'}
+              meta={linkedInAiStatus || linkedInStatus || 'Upload connections file'}
+            />
+            <DashboardCard
+              label="Location"
+              value={mergedProfile.location || 'Location needed'}
+              meta={
+                hasAiReport
+                  ? report.marketSnapshot.summary || 'AI market snapshot ready'
+                  : 'Run AI analysis'
+              }
+            />
+          </View>
+
+          <Text style={styles.label}>KPI tiles</Text>
+          <View style={styles.dashboardGrid}>
+            <KpiTile
+              label="ATS Score"
+              value={
+                report.resumeAnalysis?.atsScore !== undefined
+                  ? `${report.resumeAnalysis.atsScore}`
+                  : 'N/A'
+              }
+              meta={
+                report.resumeAnalysis?.atsReadiness ||
+                (hasAiReport ? 'ATS data missing' : 'Run AI analysis')
+              }
+            />
+            <KpiTile label="AI Risk" value={aiRiskLabel} meta="From skills portfolio" />
+            <KpiTile label="Market Signals" value={marketSignal} meta="AI analysis" />
+          </View>
+
+          {missingFields.length ? (
+            <>
+              <Text style={styles.label}>Missing inputs</Text>
+              {missingFields.map((field) => (
+                <Text key={field} style={styles.missingText}>
+                  - {field}
+                </Text>
+              ))}
+            </>
+          ) : null}
+
+          <Text style={styles.label}>Agent lineup</Text>
           <View style={styles.agentGrid}>
-            {agentStatus.map((agent) => (
+            {agentRoster.map((agent) => (
               <View key={agent.name} style={styles.agentCard}>
                 <Text style={styles.agentName}>{agent.name}</Text>
                 <Text style={styles.agentRole}>{agent.role}</Text>
@@ -448,477 +1371,643 @@ export default function App() {
               </View>
             ))}
           </View>
-        </Section>
 
-        <Section
-          title="Resume Intake"
-          subtitle="Upload your resume so Cipher can extract roles, education, and skills."
+          {renderChatSection({
+            title: 'Ask Cipher',
+            question: agentQuestion,
+            setQuestion: setAgentQuestion,
+            onSend: handleAgentChat,
+            status: agentChatStatus,
+            thread: agentThread,
+            buttonLabel: 'Ask Cipher',
+            placeholder: 'Ask for career moves, negotiation prep, or strategy.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'resume') {
+      return (
+        <Card
+          title="Resume Upload & Profile"
+          subtitle="Upload, parse, and confirm your resume data."
         >
-          <Text style={styles.helper}>
-            Supports PDF, DOCX, DOC, or plain text. Cipher uses your resume to
-            populate role, experience, education, and skills.
-          </Text>
-          <Text style={styles.helper}>
-            PDF extraction is best-effort for text-based PDFs. If results look off, paste
-            the resume text.
-          </Text>
-          <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
-            <Text style={styles.secondaryButtonText}>
-              {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
-            </Text>
-          </Pressable>
-          {resumeFileName ? (
-            <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
-          ) : null}
-          {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
-          <Field
-            label="Or paste resume text here"
-            value={resumeText}
-            onChangeText={setResumeText}
-            placeholder="Paste resume text for extraction and ATS scan"
-            multiline
-          />
-          {resumeExtraction.warnings.length ? (
-            resumeExtraction.warnings.map((warning) => (
-              <Text key={warning} style={styles.missingText}>
-                - {warning}
-              </Text>
-            ))
-          ) : null}
-        </Section>
-
-        <Section
-          title="AI Resume Parser (Recommended)"
-          subtitle="Use an AI model to extract structured data from the resume."
-        >
-          <Text style={styles.helper}>
-            Runs automatically on upload via a serverless AI parser (no API key in app).
-          </Text>
-          <Text style={styles.helper}>
-            Deploy the Cloudflare Worker in /serverless and paste its URL here.
-          </Text>
-          <Field
-            label="Model"
-            value={aiModel}
-            onChangeText={setAiModel}
-            placeholder="gpt-4o"
-          />
-          <Field
-            label="AI parser URL"
-            value={aiBaseUrl}
-            onChangeText={setAiBaseUrl}
-            placeholder="https://your-worker.workers.dev"
-          />
-          <Text style={styles.helper}>
-            Tip: If the app is served over https (GitHub Pages), the parser URL must
-            be https as well. http URLs will be blocked.
-          </Text>
-          <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
-            <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>
-          </Pressable>
-          {aiStatus ? <Text style={styles.helper}>{aiStatus}</Text> : null}
-          {aiResumeExtraction ? (
-            <ToggleRow
-              label="Use AI parsing results"
-              value={useAiParser}
-              onValueChange={setUseAiParser}
-            />
-          ) : null}
-          <ToggleRow
-            label="Auto-parse on upload"
-            value={autoParseEnabled}
-            onValueChange={setAutoParseEnabled}
-          />
-        </Section>
-
-        <Section
-          title="Extracted Profile"
-          subtitle="Auto-filled from your resume (review for accuracy)."
-        >
-          <InfoRow label="Name" value={mergedProfile.name || 'Not detected'} />
-          <InfoRow label="Current role" value={mergedProfile.currentRole || 'Not detected'} />
-          <InfoRow
-            label="Years of experience"
-            value={mergedProfile.yearsExperience || 'Not detected'}
-          />
-          <InfoRow label="Education" value={mergedProfile.education || 'Not detected'} />
-          <InfoRow
-            label="Certifications"
-            value={mergedProfile.certifications || 'Not detected'}
-          />
-          <InfoRow label="Industries" value={mergedProfile.industries || 'Not detected'} />
-          <InfoRow
-            label="Location (from resume)"
-            value={resumeExtraction.profile.location || 'Not detected'}
-          />
-        </Section>
-
-        <Section title="Location and Mobility" subtitle="Confirm your preferences.">
-          <Field
-            label="Location (confirm or update)"
-            value={profile.location || mergedProfile.location || ''}
-            onChangeText={(value) => updateProfile('location', value)}
-            placeholder="City, region, or time zone"
-          />
-          <ToggleRow
-            label="Willing to relocate"
-            value={profile.willingToRelocate}
-            onValueChange={(value) => updateProfile('willingToRelocate', value)}
-          />
-          <ToggleRow
-            label="Open to international opportunities"
-            value={profile.openToInternational}
-            onValueChange={(value) => updateProfile('openToInternational', value)}
-          />
-        </Section>
-
-        <Section
-          title="Demographics (Required)"
-          subtitle="Cipher uses this to provide realistic, tailored guidance."
-        >
-          <Field
-            label="Age"
-            value={profile.age}
-            onChangeText={(value) => updateProfile('age', value)}
-            placeholder="e.g., 34"
-            keyboardType="numeric"
-          />
-          <Field
-            label="Gender"
-            value={profile.gender}
-            onChangeText={(value) => updateProfile('gender', value)}
-            placeholder="e.g., Woman, Man, Non-binary"
-          />
-          <Field
-            label="Race/Ethnicity"
-            value={profile.raceEthnicity}
-            onChangeText={(value) => updateProfile('raceEthnicity', value)}
-            placeholder="e.g., Black, Hispanic/Latino, Asian"
-          />
-        </Section>
-
-        <Section title="Experience Signals" subtitle="Transferable skills discovery">
-          <Field
-            label="Hobbies"
-            value={profile.hobbies}
-            onChangeText={(value) => updateProfile('hobbies', value)}
-            placeholder="Activities that show skills"
-            multiline
-          />
-          <Field
-            label="Volunteer work"
-            value={profile.volunteer}
-            onChangeText={(value) => updateProfile('volunteer', value)}
-            placeholder="Leadership or community work"
-            multiline
-          />
-          <Field
-            label="Side projects"
-            value={profile.sideProjects}
-            onChangeText={(value) => updateProfile('sideProjects', value)}
-            placeholder="Portfolio or side initiatives"
-            multiline
-          />
-          <Field
-            label="Additional notes"
-            value={profile.notes}
-            onChangeText={(value) => updateProfile('notes', value)}
-            placeholder="Anything else Cipher should know"
-            multiline
-          />
-        </Section>
-
-        <Section title="Goals and Risk Profile" subtitle="Define the path you want">
-          <Text style={styles.label}>Career goals</Text>
-          <View style={styles.optionRow}>
-            {goalOptions.map((goal) => (
-              <Chip
-                key={goal}
-                label={goal}
-                selected={profile.careerGoals.includes(goal)}
-                onPress={() => toggleGoal(goal)}
-              />
-            ))}
-          </View>
-          <Text style={styles.label}>Risk tolerance</Text>
-          <View style={styles.optionRow}>
-            {riskOptions.map((option) => (
-              <Chip
-                key={option}
-                label={option}
-                selected={profile.riskTolerance === option}
-                onPress={() => updateProfile('riskTolerance', option)}
-              />
-            ))}
-          </View>
-          <Text style={styles.label}>AI literacy level</Text>
-          <View style={styles.optionRow}>
-            {aiOptions.map((option) => (
-              <Chip
-                key={option}
-                label={option}
-                selected={profile.aiLiteracy === option}
-                onPress={() => updateProfile('aiLiteracy', option)}
-              />
-            ))}
-          </View>
-        </Section>
-
-        <Section
-          title="Extracted Skills"
-          subtitle="Cipher pulls skills directly from your resume."
-        >
-          {resumeSkills.length === 0 ? (
+          <CollapsibleCard title="Resume Upload" defaultCollapsed={false}>
             <Text style={styles.helper}>
-              No skills detected yet. Ensure your resume includes a Skills section or
-              paste the latest version.
+              Supports PDF, DOCX, DOC, or plain text. Cipher uses your resume to
+              populate role, experience, education, and skills.
             </Text>
-          ) : (
-            resumeSkills.map((skill) => (
-              <View key={skill.id} style={styles.skillCard}>
-                <Text style={styles.skillName}>{skill.name}</Text>
-                <Text style={styles.skillMeta}>{skill.category}</Text>
-              </View>
-            ))
-          )}
-        </Section>
+            <Text style={styles.helper}>
+              ATS scan runs on text extracted from the uploaded file.
+            </Text>
+            <Text style={styles.helper}>
+              PDF extraction is best-effort for text-based PDFs. If results look off, upload
+              a text-based PDF or DOCX.
+            </Text>
+            <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
+              <Text style={styles.secondaryButtonText}>
+                {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
+              </Text>
+            </Pressable>
+            {resumeFileName ? (
+              <Text style={styles.helper}>Selected file: {resumeFileName}</Text>
+            ) : null}
+            {resumeUploadedAt ? (
+              <Text style={styles.helper}>
+                File expires on {formatExpiryDate(resumeUploadedAt)}.
+              </Text>
+            ) : null}
+            {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
+            {resumeExtraction.warnings.length && resumeText.trim() ? (
+              resumeExtraction.warnings.map((warning) => (
+                <Text key={warning} style={styles.missingText}>
+                  - {warning}
+                </Text>
+              ))
+            ) : null}
+          </CollapsibleCard>
 
-        <Section
-          title="Market Snapshot"
-          subtitle="Provide recent market signals so Cipher can tailor advice."
-        >
-          <Field
-            label="Date of latest market scan"
-            value={market.updatedAt}
-            onChangeText={(value) => updateMarket('updatedAt', value)}
-            placeholder="e.g., 2026-02-05"
-          />
-          <Field
-            label="Economic indicators"
-            value={market.indicators}
-            onChangeText={(value) => updateMarket('indicators', value)}
-            placeholder="Unemployment, job openings, GDP notes"
-            multiline
-          />
-          <Field
-            label="Hiring trends"
-            value={market.hiringTrends}
-            onChangeText={(value) => updateMarket('hiringTrends', value)}
-            placeholder="Which sectors are hiring or freezing?"
-            multiline
-          />
-          <Field
-            label="Layoff patterns"
-            value={market.layoffs}
-            onChangeText={(value) => updateMarket('layoffs', value)}
-            placeholder="Recent layoffs or restructures"
-            multiline
-          />
-          <Field
-            label="Funding or M&A activity"
-            value={market.funding}
-            onChangeText={(value) => updateMarket('funding', value)}
-            placeholder="Funding rounds, acquisitions, IPO notes"
-            multiline
-          />
-          <Field
-            label="AI hiring or automation trends"
-            value={market.aiTrends}
-            onChangeText={(value) => updateMarket('aiTrends', value)}
-            placeholder="AI teams hiring, automation announcements"
-            multiline
-          />
-          <Field
-            label="Sources"
-            value={market.sources}
-            onChangeText={(value) => updateMarket('sources', value)}
-            placeholder="BLS, LinkedIn, WEF, Glassdoor, etc."
-          />
-        </Section>
+          <CollapsibleCard title="AI Resume Parser (Recommended)" defaultCollapsed={false}>
+            <Text style={styles.helper}>
+              Choose how to parse: direct OpenAI (client key) or serverless endpoint.
+            </Text>
+            <View style={styles.optionRow}>
+              <Chip
+                label="OpenAI API key"
+                selected={aiParserMode === 'openai'}
+                onPress={() => setAiParserMode('openai')}
+              />
+              <Chip
+                label="Serverless URL"
+                selected={aiParserMode === 'serverless'}
+                onPress={() => setAiParserMode('serverless')}
+              />
+            </View>
+            {aiParserMode === 'openai' ? (
+              <Field
+                label="OpenAI API key"
+                value={aiApiKey}
+                onChangeText={setAiApiKey}
+                placeholder="sk-..."
+                secureTextEntry
+              />
+            ) : (
+              <Text style={styles.helper}>
+                Deploy the serverless parser and paste its URL here.
+              </Text>
+            )}
+            <Field
+              label="Model"
+              value={aiModel}
+              onChangeText={setAiModel}
+              placeholder="gpt-4o"
+            />
+            <Field
+              label={aiParserMode === 'openai' ? 'OpenAI base URL' : 'AI parser URL'}
+              value={aiBaseUrl}
+              onChangeText={setAiBaseUrl}
+              placeholder={
+                aiParserMode === 'openai'
+                  ? 'https://api.openai.com'
+                  : 'https://your-parser.example.com'
+              }
+            />
+            <Text style={styles.helper}>
+              Tip: If the app is served over https (GitHub Pages), the parser URL must
+              be https as well. http URLs will be blocked.
+            </Text>
+            {aiParserMode === 'openai' ? (
+              <Text style={styles.helper}>
+                Note: Some browsers block direct API calls due to CORS. If this fails,
+                switch to the serverless parser. Only PDFs are sent as attachments;
+                other file types use extracted text.
+              </Text>
+            ) : null}
+            <Pressable style={styles.primaryButton} onPress={() => handleAiResumeParse(false)}>
+              <Text style={styles.primaryButtonText}>Re-run AI Parser</Text>
+            </Pressable>
+            {aiStatus ? <Text style={styles.helper}>{aiStatus}</Text> : null}
+            {aiResumeExtraction ? (
+              <ToggleRow
+                label="Use AI parsing results"
+                value={useAiParser}
+                onValueChange={setUseAiParser}
+              />
+            ) : null}
+            <ToggleRow
+              label="Auto-parse on upload"
+              value={autoParseEnabled}
+              onValueChange={setAutoParseEnabled}
+            />
+          </CollapsibleCard>
 
-        <Section
-          title="LinkedIn Network Analysis"
-          subtitle="Upload Connections.csv or paste it for deeper insights."
+          <CollapsibleCard title="Extracted Profile" defaultCollapsed={false}>
+            <InfoRow label="Name" value={mergedProfile.name || 'Not detected'} />
+            <InfoRow label="Current role" value={mergedProfile.currentRole || 'Not detected'} />
+            <InfoRow
+              label="Years of experience"
+              value={mergedProfile.yearsExperience || 'Not detected'}
+            />
+            <InfoRow label="Education" value={mergedProfile.education || 'Not detected'} />
+            <InfoRow
+              label="Certifications"
+              value={mergedProfile.certifications || 'Not detected'}
+            />
+            <InfoRow label="Industries" value={mergedProfile.industries || 'Not detected'} />
+            <InfoRow
+              label="Location (from resume)"
+              value={resumeExtraction.profile.location || 'Not detected'}
+            />
+          </CollapsibleCard>
+
+          <CollapsibleCard title="Location and Mobility">
+            <Field
+              label="Location (confirm or update)"
+              value={profile.location || mergedProfile.location || ''}
+              onChangeText={(value) => updateProfile('location', value)}
+              placeholder="City, region, or time zone"
+            />
+            <ToggleRow
+              label="Willing to relocate"
+              value={profile.willingToRelocate}
+              onValueChange={(value) => updateProfile('willingToRelocate', value)}
+            />
+            <ToggleRow
+              label="Open to international opportunities"
+              value={profile.openToInternational}
+              onValueChange={(value) => updateProfile('openToInternational', value)}
+            />
+          </CollapsibleCard>
+
+          <CollapsibleCard title="Demographics (Required)">
+            <Field
+              label="Age"
+              value={profile.age}
+              onChangeText={(value) => updateProfile('age', value)}
+              placeholder="e.g., 34"
+              keyboardType="numeric"
+            />
+            <Field
+              label="Gender"
+              value={profile.gender}
+              onChangeText={(value) => updateProfile('gender', value)}
+              placeholder="e.g., Woman, Man, Non-binary"
+            />
+            <Field
+              label="Race/Ethnicity"
+              value={profile.raceEthnicity}
+              onChangeText={(value) => updateProfile('raceEthnicity', value)}
+              placeholder="e.g., Black, Hispanic/Latino, Asian"
+            />
+          </CollapsibleCard>
+
+          <CollapsibleCard title="Experience Signals">
+            <Field
+              label="Hobbies"
+              value={profile.hobbies}
+              onChangeText={(value) => updateProfile('hobbies', value)}
+              placeholder="Activities that show skills"
+              multiline
+            />
+            <Field
+              label="Volunteer work"
+              value={profile.volunteer}
+              onChangeText={(value) => updateProfile('volunteer', value)}
+              placeholder="Leadership or community work"
+              multiline
+            />
+            <Field
+              label="Side projects"
+              value={profile.sideProjects}
+              onChangeText={(value) => updateProfile('sideProjects', value)}
+              placeholder="Portfolio or side initiatives"
+              multiline
+            />
+            <Field
+              label="Additional notes"
+              value={profile.notes}
+              onChangeText={(value) => updateProfile('notes', value)}
+              placeholder="Anything else Cipher should know"
+              multiline
+            />
+          </CollapsibleCard>
+
+          <CollapsibleCard title="Goals and Risk Profile">
+            <Text style={styles.label}>Career goals</Text>
+            <View style={styles.optionRow}>
+              {goalOptions.map((goal) => (
+                <Chip
+                  key={goal}
+                  label={goal}
+                  selected={profile.careerGoals.includes(goal)}
+                  onPress={() => toggleGoal(goal)}
+                />
+              ))}
+            </View>
+            <Text style={styles.label}>Risk tolerance</Text>
+            <View style={styles.optionRow}>
+              {riskOptions.map((option) => (
+                <Chip
+                  key={option}
+                  label={option}
+                  selected={profile.riskTolerance === option}
+                  onPress={() => updateProfile('riskTolerance', option)}
+                />
+              ))}
+            </View>
+            <Text style={styles.label}>AI literacy level</Text>
+            <View style={styles.optionRow}>
+              {aiOptions.map((option) => (
+                <Chip
+                  key={option}
+                  label={option}
+                  selected={profile.aiLiteracy === option}
+                  onPress={() => updateProfile('aiLiteracy', option)}
+                />
+              ))}
+            </View>
+          </CollapsibleCard>
+
+          <CollapsibleCard title="Extracted Skills">
+            {resumeSkills.length === 0 ? (
+              <Text style={styles.helper}>
+                No skills detected yet. Ensure your resume includes a Skills section.
+              </Text>
+            ) : (
+              resumeSkills.map((skill) => (
+                <View key={skill.id} style={styles.skillCard}>
+                  <Text style={styles.skillName}>{skill.name}</Text>
+                  <Text style={styles.skillMeta}>{skill.category}</Text>
+                </View>
+              ))
+            )}
+          </CollapsibleCard>
+
+          {renderChatSection({
+            title: 'Ask the resume agent (Helix)',
+            question: resumeQuestion,
+            setQuestion: setResumeQuestion,
+            onSend: handleResumeAgentChat,
+            status: resumeChatStatus,
+            thread: resumeThread,
+            buttonLabel: 'Ask Helix',
+            placeholder: 'Ask about ATS readiness or resume improvements.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'linkedin') {
+      return (
+        <Card
+          title="LinkedIn Upload"
+          subtitle="Upload your LinkedIn export to power network insights."
         >
-          <Text style={styles.helper}>
-            Cipher can analyze your network to surface warm introductions, hiring
-            managers, and gaps. Your data stays on device.
-          </Text>
           <Text style={styles.helper}>
             Download steps: Settings &amp; Privacy {'>'} Data Privacy {'>'} Get a copy of your
             data {'>'} Connections {'>'} Request archive.
           </Text>
           <Pressable style={styles.secondaryButton} onPress={handleLinkedInPick}>
             <Text style={styles.secondaryButtonText}>
-              {Platform.OS === 'web' ? 'Upload CSV (web)' : 'Pick CSV file'}
+              {Platform.OS === 'web' ? 'Upload LinkedIn file' : 'Pick LinkedIn file'}
             </Text>
           </Pressable>
+          <Text style={styles.helper}>
+            AI agent will parse any file format you upload.
+          </Text>
+          {aiParserMode === 'openai' && !aiApiKey.trim() ? (
+            <Text style={styles.helper}>
+              Add your OpenAI API key in the AI Resume Parser section to enable
+              LinkedIn AI parsing.
+            </Text>
+          ) : null}
           {linkedInStatus ? <Text style={styles.helper}>{linkedInStatus}</Text> : null}
-          <Field
-            label="Or paste Connections.csv here"
-            value={linkedInCsv}
-            onChangeText={setLinkedInCsv}
-            placeholder="Paste CSV content"
-            multiline
+          {linkedInUploadedAt ? (
+            <Text style={styles.helper}>
+              File expires on {formatExpiryDate(linkedInUploadedAt)}.
+            </Text>
+          ) : null}
+          {linkedInAiStatus ? <Text style={styles.helper}>{linkedInAiStatus}</Text> : null}
+          <ToggleRow
+            label="Enable LinkedIn AI agent"
+            value={linkedInAiEnabled}
+            onValueChange={setLinkedInAiEnabled}
           />
           {connections.length ? (
             <Text style={styles.helper}>
-              Parsed {connections.length} connections from LinkedIn CSV.
+              Parsed {connections.length} connections from LinkedIn file.
             </Text>
           ) : null}
-        </Section>
 
-        {missingFields.length ? (
-          <Section
-            title="Missing Required Inputs"
-            subtitle="Complete these for full analysis."
-          >
-            {missingFields.map((field) => (
-              <Text key={field} style={styles.missingText}>
-                - {field}
+          {renderChatSection({
+            title: 'Ask the network agent (Nexus)',
+            question: networkQuestion,
+            setQuestion: setNetworkQuestion,
+            onSend: handleNetworkAgentChat,
+            status: networkChatStatus,
+            thread: networkThread,
+            buttonLabel: 'Ask Nexus',
+            placeholder: 'Ask about networking strategy or outreach tactics.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'market') {
+      return (
+        <Card
+          title="Market Conditions"
+          subtitle="AI market agent builds this from public sources and your location."
+        >
+          <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
+            <ReportSectionView section={report.marketSnapshot} />
+            {!hasAiReport ? (
+              <Text style={styles.helper}>
+                Run AI analysis to generate market conditions and citations.
               </Text>
-            ))}
-          </Section>
-        ) : null}
-
-        <Section title="Cipher Report" subtitle="Generated insights and action plan.">
-          <ReportSectionView section={report.marketSnapshot} />
-          <ReportSectionView section={report.aiResilience} />
-          <ReportSectionView section={report.aiForward} />
-          <ReportSectionView section={report.demographicStrategy} />
-          <ReportSectionView section={report.careerInsights} />
-
-          <Text style={styles.sectionTitle}>Skills Portfolio</Text>
-          {report.skillsPortfolio.length ? (
-            report.skillsPortfolio.map((skill) => (
-              <View key={skill.name} style={styles.reportCard}>
-                <Text style={styles.reportTitle}>
-                  {skill.name} ({skill.category})
-                </Text>
-                <Text style={styles.reportMeta}>
-                  Market value score: {skill.marketValueScore} | Demand: {skill.demandLevel} |
-                  Scarcity: {skill.scarcity} | Premium: {skill.compensationPremium}
-                </Text>
-                <Text style={styles.reportMeta}>
-                  AI risk: {skill.aiRisk} ({skill.aiImpactTimeline})
-                </Text>
-                <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
-                <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
-                <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
-                <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
-                {skill.aiTools.length ? (
-                  <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
-                ) : null}
-                <Text style={styles.reportText}>
-                  10-year value strategy: {skill.valueMaintenance.join(' ')}
-                </Text>
-                <Text style={styles.reportText}>
-                  Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
-                  {skill.projections.tenYear}
-                </Text>
-              </View>
-            ))
-          ) : (
-            <Text style={styles.helper}>
-              Upload your resume to generate the skills portfolio.
-            </Text>
-          )}
-
-          <Text style={styles.sectionTitle}>Career Path Options</Text>
-          {report.careerPaths.map((path) => (
-            <View key={path.tier} style={styles.reportCard}>
-              <Text style={styles.reportTitle}>{path.tier}</Text>
-              <Text style={styles.reportText}>{path.title}</Text>
-              <Text style={styles.reportText}>{path.overview}</Text>
-              <Text style={styles.reportText}>Risk/reward: {path.riskReward}</Text>
-              <Text style={styles.reportText}>
-                Earning potential: {path.earningPotential}
-              </Text>
-              <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
-              <Text style={styles.reportSubheading}>3-Year Plan</Text>
-              {path.threeYearPlan.year1.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 1: {item}
-                </Text>
-              ))}
-              {path.threeYearPlan.year2.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 2: {item}
-                </Text>
-              ))}
-              {path.threeYearPlan.year3.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 3: {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>5-Year Plan</Text>
-              {path.fiveYearPlan.year4.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 4: {item}
-                </Text>
-              ))}
-              {path.fiveYearPlan.year5.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - Year 5: {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Learning Path</Text>
-              {path.learningPath.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Projects</Text>
-              {path.projects.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Earnings Strategy</Text>
-              {path.earningsStrategy.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Differentials</Text>
-              {path.differentials.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Real-life Examples</Text>
-              {path.examples.map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-            </View>
-          ))}
-
-          <ReportSectionView section={report.learningRoadmap} />
-          <ReportSectionView section={report.skillsGapResources} />
-          <ReportSectionView section={report.competencyMilestones} />
-          <ReportSectionView section={report.projectsToPursue} />
-          <ReportSectionView section={report.earningsMaximization} />
-          <ReportSectionView section={report.opportunityMap} />
-          <ReportSectionView section={report.gapAnalysis} />
-          <ReportSectionView section={report.geographicOptions} />
+            ) : null}
+          </CollapsibleCard>
+          <CollapsibleCard title={report.marketOutlook.title}>
+            <ReportSectionBody section={report.marketOutlook} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.geographicOptions.title}>
+            <ReportSectionBody section={report.geographicOptions} />
+          </CollapsibleCard>
           {report.internationalPlan ? (
-            <ReportSectionView section={report.internationalPlan} />
+            <CollapsibleCard title={report.internationalPlan.title}>
+              <ReportSectionBody section={report.internationalPlan} />
+            </CollapsibleCard>
           ) : null}
-          {report.entrepreneurshipPlan ? (
-            <ReportSectionView section={report.entrepreneurshipPlan} />
-          ) : null}
-          <ReportSectionView section={report.actionPlan} />
-          <ReportSectionView section={report.marketOutlook} />
 
+          {renderChatSection({
+            title: 'Ask the market agent (Sentinel)',
+            question: marketQuestion,
+            setQuestion: setMarketQuestion,
+            onSend: handleMarketAgentChat,
+            status: marketChatStatus,
+            thread: marketThread,
+            buttonLabel: 'Ask Sentinel',
+            placeholder: 'Ask about hiring signals, layoffs, or salary trends.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'skills') {
+      return (
+        <Card title="Skills Analysis" subtitle="Skill value, AI impact, and growth strategy.">
+          <CollapsibleCard title={report.aiResilience.title} defaultCollapsed={false}>
+            <ReportSectionBody section={report.aiResilience} />
+          </CollapsibleCard>
+          <CollapsibleCard title="Skills Portfolio" defaultCollapsed={false}>
+            {report.skillsPortfolio.length ? (
+              report.skillsPortfolio.map((skill) => (
+                <View key={skill.name} style={styles.reportCard}>
+                  <Text style={styles.reportTitle}>
+                    {skill.name} ({skill.category})
+                  </Text>
+                  <Text style={styles.reportMeta}>
+                    Market value score: {skill.marketValueScore} | Demand: {skill.demandLevel} |
+                    Scarcity: {skill.scarcity} | Premium: {skill.compensationPremium}
+                  </Text>
+                  <Text style={styles.reportMeta}>
+                    AI risk: {skill.aiRisk} ({skill.aiImpactTimeline})
+                  </Text>
+                  <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
+                  <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
+                  <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
+                  <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
+                  {skill.aiTools.length ? (
+                    <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
+                  ) : null}
+                  <Text style={styles.reportText}>
+                    Industry outlook (US): {skill.industryOutlook.industries.join(', ')}
+                  </Text>
+                  <Text style={styles.reportText}>
+                    Outlook notes: {skill.industryOutlook.notes}
+                  </Text>
+                  <Text style={styles.reportText}>
+                    Sources: {skill.industryOutlook.sources.join(', ')}
+                  </Text>
+                  <Text style={styles.reportText}>
+                    10-year value strategy: {skill.valueMaintenance.join(' ')}
+                  </Text>
+                  <Text style={styles.reportText}>
+                    Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
+                    {skill.projections.tenYear}
+                  </Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.helper}>
+                Run AI analysis to generate the skills portfolio and citations.
+              </Text>
+            )}
+          </CollapsibleCard>
+          <CollapsibleCard title={report.skillsGapResources.title}>
+            <ReportSectionBody section={report.skillsGapResources} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.learningRoadmap.title}>
+            <ReportSectionBody section={report.learningRoadmap} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.competencyMilestones.title}>
+            <ReportSectionBody section={report.competencyMilestones} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.projectsToPursue.title}>
+            <ReportSectionBody section={report.projectsToPursue} />
+          </CollapsibleCard>
+
+          {renderChatSection({
+            title: 'Ask the skills agent (Aegis)',
+            question: skillsQuestion,
+            setQuestion: setSkillsQuestion,
+            onSend: handleSkillsAgentChat,
+            status: skillsChatStatus,
+            thread: skillsThread,
+            buttonLabel: 'Ask Aegis',
+            placeholder: 'Ask about skills to prioritize or de-risk.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'career') {
+      const selectedPlan = report.careerPaths[activeCareerPlanIndex];
+      return (
+        <Card title="Career Paths" subtitle="Traditional, alternate, and moonshot plans.">
+          <CollapsibleCard title={report.aiForward.title} defaultCollapsed={false}>
+            <ReportSectionBody section={report.aiForward} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.careerInsights.title}>
+            <ReportSectionBody section={report.careerInsights} />
+          </CollapsibleCard>
+          <CollapsibleCard title="Career Path Options" defaultCollapsed={false}>
+            {report.careerPaths.map((path, index) => (
+              <View key={path.tier} style={styles.reportCard}>
+                <Text style={styles.reportTitle}>{path.tier}</Text>
+                <Text style={styles.reportText}>{path.title}</Text>
+                <Text style={styles.reportText}>{path.overview}</Text>
+                <Text style={styles.reportMeta}>
+                  Path type: {path.pathType} ({path.feasibility})
+                </Text>
+                <Text style={styles.reportText}>Risk/reward: {path.riskReward}</Text>
+                <Text style={styles.reportText}>
+                  Earning potential: {path.earningPotential}
+                </Text>
+                <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
+                {path.positions.length ? (
+                  <>
+                    <Text style={styles.reportSubheading}>Suggested positions</Text>
+                    {path.positions.map((position) => (
+                      <View key={position.title} style={styles.positionCard}>
+                        <Text style={styles.reportText}>{position.title}</Text>
+                        <Text style={styles.reportMeta}>{position.fit}</Text>
+                        <Pressable
+                          style={styles.linkButton}
+                          onPress={() => setActiveCareerPlanIndex(index)}
+                        >
+                          <Text style={styles.linkButtonText}>View detailed plan</Text>
+                        </Pressable>
+                      </View>
+                    ))}
+                  </>
+                ) : null}
+              </View>
+            ))}
+            {!report.careerPaths.length ? (
+              <Text style={styles.helper}>
+                Run AI analysis to generate career path options.
+              </Text>
+            ) : null}
+          </CollapsibleCard>
+
+          <CollapsibleCard title="Career Path Plan" defaultCollapsed={false}>
+            {selectedPlan ? (
+              <View style={styles.reportCard}>
+                <Text style={styles.reportTitle}>{selectedPlan.title}</Text>
+                <Text style={styles.reportMeta}>
+                  {selectedPlan.pathType} plan ({selectedPlan.feasibility})
+                </Text>
+                {selectedPlan.demographicNotes.length ? (
+                  <>
+                    <Text style={styles.reportSubheading}>Demographic considerations</Text>
+                    {selectedPlan.demographicNotes.map((item) => (
+                      <Text key={item} style={styles.reportBullet}>
+                        - {item}
+                      </Text>
+                    ))}
+                  </>
+                ) : null}
+                <Text style={styles.reportSubheading}>3-Year Plan</Text>
+                {selectedPlan.threeYearPlan.year1.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - Year 1: {item}
+                  </Text>
+                ))}
+                {selectedPlan.threeYearPlan.year2.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - Year 2: {item}
+                  </Text>
+                ))}
+                {selectedPlan.threeYearPlan.year3.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - Year 3: {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>5-Year Plan</Text>
+                {selectedPlan.fiveYearPlan.year4.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - Year 4: {item}
+                  </Text>
+                ))}
+                {selectedPlan.fiveYearPlan.year5.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - Year 5: {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Learning Path</Text>
+                {selectedPlan.learningPath.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Projects</Text>
+                {selectedPlan.projects.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Earnings Strategy</Text>
+                {selectedPlan.earningsStrategy.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Differentials</Text>
+                {selectedPlan.differentials.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+                <Text style={styles.reportSubheading}>Real-life Examples</Text>
+                {selectedPlan.examples.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.helper}>
+                Run AI analysis to generate detailed career plans.
+              </Text>
+            )}
+          </CollapsibleCard>
+
+          <CollapsibleCard title={report.earningsMaximization.title}>
+            <ReportSectionBody section={report.earningsMaximization} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.opportunityMap.title}>
+            <ReportSectionBody section={report.opportunityMap} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.actionPlan.title}>
+            <ReportSectionBody section={report.actionPlan} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.gapAnalysis.title}>
+            <ReportSectionBody section={report.gapAnalysis} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.demographicStrategy.title}>
+            <ReportSectionBody section={report.demographicStrategy} />
+          </CollapsibleCard>
+          {report.entrepreneurshipPlan ? (
+            <CollapsibleCard title={report.entrepreneurshipPlan.title}>
+              <ReportSectionBody section={report.entrepreneurshipPlan} />
+            </CollapsibleCard>
+          ) : null}
+
+          {renderChatSection({
+            title: 'Ask the career agent (Atlas)',
+            question: careerQuestion,
+            setQuestion: setCareerQuestion,
+            onSend: handleCareerAgentChat,
+            status: careerChatStatus,
+            thread: careerThread,
+            buttonLabel: 'Ask Atlas',
+            placeholder: 'Ask about career transitions or promotion strategy.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'ats') {
+      return (
+        <Card title="ATS Analysis" subtitle="Resume scan and formatting guidance.">
           {report.resumeAnalysis ? (
             <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>Resume ATS Scan</Text>
               <Text style={styles.reportText}>
                 ATS score: {report.resumeAnalysis.atsScore} (
                 {report.resumeAnalysis.atsReadiness})
               </Text>
+              <Text style={styles.reportText}>{report.resumeAnalysis.atsSummary}</Text>
               <Text style={styles.reportMeta}>
                 Word count: {report.resumeAnalysis.wordCount} | Keyword coverage:{' '}
                 {report.resumeAnalysis.keywordCoverage}%
@@ -959,12 +2048,65 @@ export default function App() {
                   - {item}
                 </Text>
               ))}
+              {report.resumeAnalysis.atsReadiness !== 'High' && !showAtsDetail ? (
+                <Pressable
+                  style={styles.secondaryButton}
+                  onPress={() => setShowAtsDetail(true)}
+                >
+                  <Text style={styles.secondaryButtonText}>
+                    View detailed resume analysis
+                  </Text>
+                </Pressable>
+              ) : null}
             </View>
+          ) : (
+            <Text style={styles.helper}>
+              Run AI analysis to generate ATS scan results.
+            </Text>
+          )}
+
+          {report.resumeAnalysis && showAtsDetail ? (
+            <>
+              <CollapsibleCard title="ATS formatting risks" defaultCollapsed={false}>
+                {report.resumeAnalysis.flags.length ? (
+                  report.resumeAnalysis.flags.map((item) => (
+                    <Text key={item} style={styles.reportBullet}>
+                      - {item}
+                    </Text>
+                  ))
+                ) : (
+                  <Text style={styles.reportText}>No ATS risk flags detected.</Text>
+                )}
+              </CollapsibleCard>
+              <CollapsibleCard title="Format and wording recommendations" defaultCollapsed={false}>
+                {report.resumeAnalysis.recommendations.map((item) => (
+                  <Text key={item} style={styles.reportBullet}>
+                    - {item}
+                  </Text>
+                ))}
+              </CollapsibleCard>
+            </>
           ) : null}
 
+          {renderChatSection({
+            title: 'Ask the ATS agent (Helix)',
+            question: atsQuestion,
+            setQuestion: setAtsQuestion,
+            onSend: handleAtsAgentChat,
+            status: atsChatStatus,
+            thread: atsThread,
+            buttonLabel: 'Ask Helix',
+            placeholder: 'Ask about ATS improvements or formatting changes.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'network') {
+      return (
+        <Card title="Network Analysis" subtitle="LinkedIn connections and outreach plan.">
           {report.networkReport ? (
-            <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>LinkedIn Network Analysis</Text>
+            <CollapsibleCard title="LinkedIn Network Analysis" defaultCollapsed={false}>
               <Text style={styles.reportText}>
                 Total connections: {report.networkReport.totalConnections}
               </Text>
@@ -1040,27 +2182,126 @@ export default function App() {
                   - {item}
                 </Text>
               ))}
-            </View>
-          ) : null}
-        </Section>
-      </ScrollView>
+            </CollapsibleCard>
+          ) : (
+            <Text style={styles.helper}>
+              Run AI analysis to generate network insights.
+            </Text>
+          )}
+
+          {renderChatSection({
+            title: 'Ask the network agent (Nexus)',
+            question: networkQuestion,
+            setQuestion: setNetworkQuestion,
+            onSend: handleNetworkAgentChat,
+            status: networkChatStatus,
+            thread: networkThread,
+            buttonLabel: 'Ask Nexus',
+            placeholder: 'Ask about warm introductions or networking gaps.',
+          })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'agent-chat') {
+      return (
+        <Card title="Agent Console" subtitle="Interact with Cipher and the agent team directly.">
+          <Text style={styles.helper}>
+            Cipher routes your question to the best agent(s) or spins up an on-demand agent if
+            none match.
+          </Text>
+          {renderChatSection({
+            title: 'Ask a question',
+            question: agentQuestion,
+            setQuestion: setAgentQuestion,
+            onSend: handleAgentChat,
+            status: agentChatStatus,
+            thread: agentThread,
+            buttonLabel: 'Ask Cipher',
+            placeholder: 'Ask for career moves, negotiation prep, or strategy.',
+          })}
+        </Card>
+      );
+    }
+
+    return (
+      <Card title="Select a card" subtitle="Choose a section from the left menu." />
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar style="light" />
+      <View style={[styles.appShell, isCompact ? styles.appShellCompact : null]}>
+        <NavRail
+          isCompact={isCompact}
+          items={navItems.filter((item) => item.visible)}
+          activeId={activeCard}
+          onSelect={setActiveCard}
+        />
+        <ScrollView
+          style={styles.mainContent}
+          contentContainerStyle={styles.container}
+        >
+          <Text style={styles.title}>Cipher Career Strategist</Text>
+          <Text style={styles.subtitle}>
+            Web + mobile intelligence hub for AI-ready career strategy.
+          </Text>
+          {renderActiveCard()}
+        </ScrollView>
+      </View>
     </SafeAreaView>
   );
 }
 
-const Section = ({
+const Card = ({
   title,
   subtitle,
   children,
 }: {
   title: string;
   subtitle?: string;
-  children: React.ReactNode;
+  children?: React.ReactNode;
 }) => (
   <View style={styles.section}>
     <Text style={styles.sectionTitle}>{title}</Text>
     {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
     {children}
+  </View>
+);
+
+const NavRail = ({
+  isCompact,
+  items,
+  activeId,
+  onSelect,
+}: {
+  isCompact: boolean;
+  items: Array<{ id: string; label: string }>;
+  activeId: string;
+  onSelect: (sectionId: string) => void;
+}) => (
+  <View style={[styles.navRail, isCompact ? styles.navRailCompact : null]}>
+    <Text style={styles.navTitle}>Cipher</Text>
+    {items.map((item) => (
+      <Pressable
+        key={item.id}
+        style={[
+          styles.navButton,
+          activeId === item.id ? styles.navButtonActive : null,
+        ]}
+        onPress={() => onSelect(item.id)}
+      >
+        <Text
+          style={[
+            styles.navButtonText,
+            activeId === item.id ? styles.navButtonTextActive : null,
+          ]}
+        >
+          {item.label}
+        </Text>
+      </Pressable>
+    ))}
   </View>
 );
 
@@ -1118,6 +2359,77 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
   </View>
 );
 
+const KpiTile = ({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+}) => (
+  <View style={styles.kpiTile}>
+    <Text style={styles.kpiLabel}>{label}</Text>
+    <Text style={styles.kpiValue}>{value}</Text>
+    {meta ? <Text style={styles.kpiMeta}>{meta}</Text> : null}
+  </View>
+);
+
+const DashboardCard = ({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+}) => (
+  <View style={styles.dashboardCard}>
+    <Text style={styles.dashboardLabel}>{label}</Text>
+    <Text style={styles.dashboardValue}>{value}</Text>
+    {meta ? <Text style={styles.dashboardMeta}>{meta}</Text> : null}
+  </View>
+);
+
+const ReportSectionBody = ({
+  section,
+}: {
+  section: { title: string; summary: string; bullets?: string[] };
+}) => (
+  <View>
+    <Text style={styles.reportText}>{section.summary}</Text>
+    {section.bullets?.map((item) => (
+      <Text key={item} style={styles.reportBullet}>
+        - {item}
+      </Text>
+    ))}
+  </View>
+);
+
+const CollapsibleCard = ({
+  title,
+  children,
+  defaultCollapsed = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultCollapsed?: boolean;
+}) => {
+  const [collapsed, setCollapsed] = useState(defaultCollapsed);
+
+  return (
+    <View style={styles.collapsibleCard}>
+      <Pressable
+        style={styles.collapsibleHeader}
+        onPress={() => setCollapsed((prev) => !prev)}
+      >
+        <Text style={styles.reportTitle}>{title}</Text>
+        <Text style={styles.collapsibleToggle}>{collapsed ? '+' : '-'}</Text>
+      </Pressable>
+      {!collapsed ? <View style={styles.collapsibleBody}>{children}</View> : null}
+    </View>
+  );
+};
 const Chip = ({
   label,
   selected,
@@ -1164,6 +2476,59 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: colors.background,
+  },
+  appShell: {
+    flex: 1,
+    flexDirection: 'row',
+  },
+  appShellCompact: {
+    flexDirection: 'column',
+  },
+  mainContent: {
+    flex: 1,
+  },
+  navRail: {
+    width: 200,
+    backgroundColor: '#0b0e16',
+    paddingTop: 24,
+    paddingHorizontal: 16,
+    borderRightWidth: 1,
+    borderRightColor: colors.border,
+  },
+  navRailCompact: {
+    width: '100%',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    borderRightWidth: 0,
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  navTitle: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginBottom: 16,
+  },
+  navButton: {
+    backgroundColor: '#121725',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  navButtonActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  navButtonText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  navButtonTextActive: {
+    color: '#fff',
   },
   container: {
     padding: 20,
@@ -1309,6 +2674,97 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: 12,
   },
+  dashboardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
+  },
+  cardRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 16,
+  },
+  dashboardCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 160,
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dashboardLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  dashboardValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  dashboardMeta: {
+    color: colors.muted,
+    marginTop: 6,
+    fontSize: 12,
+  },
+  kpiTile: {
+    backgroundColor: '#0f1320',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 160,
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  kpiLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  kpiValue: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 6,
+  },
+  kpiMeta: {
+    color: colors.muted,
+    marginTop: 6,
+    fontSize: 12,
+  },
+  linkButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  linkButtonText: {
+    color: colors.text,
+  },
+  collapsibleCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  collapsibleHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  collapsibleToggle: {
+    color: colors.accentStrong,
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  collapsibleBody: {
+    marginTop: 8,
+  },
   agentCard: {
     backgroundColor: '#121725',
     padding: 10,
@@ -1337,6 +2793,33 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  positionCard: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chatBubble: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    padding: 10,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  chatSection: {
+    marginTop: 12,
+  },
+  chatRole: {
+    color: colors.accentStrong,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  chatText: {
+    color: colors.text,
   },
   reportTitle: {
     color: colors.text,
