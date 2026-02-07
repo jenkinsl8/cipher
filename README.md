@@ -46,6 +46,12 @@ due to CORS; if so, use the serverless option.
 
 PDF uploads in OpenAI mode are sent directly to the API for parsing.
 
+To run the live OpenAI integration test locally:
+
+```bash
+OPENAI_API_KEY=sk-... npm test -- aiResumeParser.integration.test.ts
+```
+
 ### Vercel (recommended)
 
 1. Create a Vercel project with **Root Directory** set to `vercel/`.
