@@ -17,6 +17,7 @@ import {
 
 import { generateCipherReport } from './src/engine/cipherEngine';
 import { parseLinkedInConnections } from './src/utils/csv';
+import { parseLinkedInWithOpenAI } from './src/utils/linkedInParser';
 import {
   extractTextFromDocBinary,
   extractTextFromDocxBinary,
@@ -175,6 +176,13 @@ export default function App() {
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
+  const [linkedInFilePayload, setLinkedInFilePayload] = useState<{
+    name: string;
+    mimeType: string;
+    data: string;
+  } | null>(null);
+  const [linkedInAiStatus, setLinkedInAiStatus] = useState('');
+  const [linkedInAiEnabled, setLinkedInAiEnabled] = useState(true);
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
@@ -242,6 +250,15 @@ export default function App() {
     setLastAutoParsed('');
   }, [resumeText]);
 
+  useEffect(() => {
+    setLinkedInStatus('');
+    if (!linkedInAiEnabled || !linkedInFilePayload || !aiApiKey.trim()) return;
+    const timer = setTimeout(() => {
+      handleLinkedInAiParse();
+    }, 800);
+    return () => clearTimeout(timer);
+  }, [linkedInFilePayload, linkedInAiEnabled, aiApiKey, aiModel, aiBaseUrl]);
+
   const updateProfile = <K extends keyof UserProfile>(key: K, value: UserProfile[K]) => {
     setProfile((prev) => ({ ...prev, [key]: value }));
   };
@@ -260,19 +277,71 @@ export default function App() {
     setLinkedInStatus('');
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: ['text/csv', 'text/plain', 'application/vnd.ms-excel'],
+        type: ['*/*'],
         copyToCacheDirectory: true,
       });
       if (result.canceled) return;
       const asset = result.assets && result.assets[0];
       if (!asset?.uri) return;
-      const content = await FileSystem.readAsStringAsync(asset.uri, {
-        encoding: FileSystem.EncodingType.UTF8,
+      const base64 = await readAssetBase64(asset);
+      if (!base64) {
+        setLinkedInStatus('Could not read the LinkedIn file.');
+        return;
+      }
+      setLinkedInFilePayload({
+        name: asset.name || 'connections',
+        mimeType: asset.mimeType || 'application/octet-stream',
+        data: base64,
       });
-      setLinkedInCsv(content);
-      setLinkedInStatus(`Loaded ${content.split('\n').length} lines.`);
+      setLinkedInStatus('LinkedIn file uploaded. Parsing with AI agent...');
     } catch (error) {
-      setLinkedInStatus('Could not load the CSV file.');
+      setLinkedInStatus('Could not load the LinkedIn file.');
+    }
+  };
+
+  const handleLinkedInAiParse = async () => {
+    if (!linkedInFilePayload) return;
+    if (!aiApiKey.trim()) {
+      setLinkedInAiStatus('Add your OpenAI API key to enable LinkedIn AI parsing.');
+      return;
+    }
+
+    setLinkedInAiStatus('Parsing LinkedIn file with AI agent...');
+    try {
+      const parsed = await parseLinkedInWithOpenAI({
+        apiKey: aiApiKey.trim(),
+        model: aiModel.trim() || 'gpt-4o',
+        baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
+        file: linkedInFilePayload,
+      });
+      if (parsed.connections?.length) {
+        const rows = parsed.connections
+          .map((connection) =>
+            [
+              connection.firstName,
+              connection.lastName,
+              connection.email,
+              connection.company,
+              connection.position,
+              connection.connectedOn,
+              connection.location,
+            ].join(',')
+          )
+          .join('\n');
+        const csv = `First Name,Last Name,Email Address,Company,Position,Connected On,Location\n${rows}`;
+        setLinkedInCsv(csv);
+        setLinkedInAiStatus(
+          `Parsed ${parsed.connections.length} connections with AI agent.`
+        );
+      } else {
+        setLinkedInAiStatus('AI agent did not find any connections.');
+      }
+    } catch (error) {
+      setLinkedInAiStatus(
+        error instanceof Error
+          ? error.message
+          : 'LinkedIn AI parsing failed.'
+      );
     }
   };
 
@@ -889,17 +958,25 @@ export default function App() {
               {Platform.OS === 'web' ? 'Upload CSV (web)' : 'Pick CSV file'}
             </Text>
           </Pressable>
+          <Text style={styles.helper}>
+            AI agent will parse any file format you upload.
+          </Text>
+          {aiParserMode === 'openai' && !aiApiKey.trim() ? (
+            <Text style={styles.helper}>
+              Add your OpenAI API key in the AI Resume Parser section to enable
+              LinkedIn AI parsing.
+            </Text>
+          ) : null}
           {linkedInStatus ? <Text style={styles.helper}>{linkedInStatus}</Text> : null}
-          <Field
-            label="Or paste Connections.csv here"
-            value={linkedInCsv}
-            onChangeText={setLinkedInCsv}
-            placeholder="Paste CSV content"
-            multiline
+          {linkedInAiStatus ? <Text style={styles.helper}>{linkedInAiStatus}</Text> : null}
+          <ToggleRow
+            label="Enable LinkedIn AI agent"
+            value={linkedInAiEnabled}
+            onValueChange={setLinkedInAiEnabled}
           />
           {connections.length ? (
             <Text style={styles.helper}>
-              Parsed {connections.length} connections from LinkedIn CSV.
+              Parsed {connections.length} connections from LinkedIn file.
             </Text>
           ) : null}
         </Section>

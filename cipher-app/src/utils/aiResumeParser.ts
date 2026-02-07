@@ -82,7 +82,7 @@ export const normalizeAiResumePayload = (payload: AiResumePayload): ResumeExtrac
   };
 };
 
-const parseJsonSafely = (value: string) => {
+export const parseJsonSafely = (value: string) => {
   try {
     return JSON.parse(value);
   } catch {
@@ -113,7 +113,7 @@ const inferMimeType = (file: { name?: string; mimeType?: string }) => {
   }
 };
 
-const extractJsonFromText = (value: string) => {
+export const extractJsonFromText = (value: string) => {
   const trimmed = value.trim();
   if (!trimmed) return null;
   const direct = parseJsonSafely(trimmed);
