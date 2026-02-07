@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
 import * as DocumentPicker from 'expo-document-picker';
 import * as FileSystem from 'expo-file-system';
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Buffer } from 'buffer';
 import {
   Platform,
@@ -173,6 +173,8 @@ const mergeProfile = (
 };
 
 export default function App() {
+  const scrollViewRef = useRef<ScrollView>(null);
+  const sectionPositions = useRef<Record<string, number>>({});
   const [profile, setProfile] = useState<UserProfile>(initialProfile);
   const [linkedInCsv, setLinkedInCsv] = useState('');
   const [linkedInStatus, setLinkedInStatus] = useState('');
@@ -183,6 +185,7 @@ export default function App() {
   } | null>(null);
   const [linkedInAiStatus, setLinkedInAiStatus] = useState('');
   const [linkedInAiEnabled, setLinkedInAiEnabled] = useState(true);
+  const [showDetailedReport, setShowDetailedReport] = useState(false);
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
   const [resumeFileName, setResumeFileName] = useState('');
@@ -229,6 +232,28 @@ export default function App() {
       ),
     [mergedProfile, resumeSkills, connections, resumeText]
   );
+
+  const handleSectionLayout = (sectionId: string, y: number) => {
+    sectionPositions.current[sectionId] = y;
+  };
+
+  const scrollToSection = (sectionId: string) => {
+    if (sectionId === 'detailed-report' && !showDetailedReport) {
+      setShowDetailedReport(true);
+      setTimeout(() => {
+        const y = sectionPositions.current[sectionId];
+        if (typeof y === 'number') {
+          scrollViewRef.current?.scrollTo({ y, animated: true });
+        }
+      }, 250);
+      return;
+    }
+
+    const y = sectionPositions.current[sectionId];
+    if (typeof y === 'number') {
+      scrollViewRef.current?.scrollTo({ y, animated: true });
+    }
+  };
 
   const missingFields = useMemo(() => {
     const missing: string[] = [];
@@ -654,11 +679,85 @@ export default function App() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <StatusBar style="light" />
-      <ScrollView contentContainerStyle={styles.container}>
+      <ScrollView ref={scrollViewRef} contentContainerStyle={styles.container}>
         <Text style={styles.title}>Cipher Career Strategist</Text>
         <Text style={styles.subtitle}>
           Web + mobile intelligence hub for AI-ready career strategy.
         </Text>
+
+        <Section
+          title="Dashboard"
+          subtitle="Snapshot and quick navigation"
+          sectionId="dashboard"
+          onLayout={handleSectionLayout}
+        >
+          <View style={styles.dashboardGrid}>
+            <DashboardCard
+              label="Resume"
+              value={resumeFileName ? 'Uploaded' : 'Missing'}
+              meta={resumeFileName || 'Upload resume to begin'}
+            />
+            <DashboardCard
+              label="AI Parser"
+              value={useAiParser ? 'AI Parsed' : 'Local Extract'}
+              meta={aiStatus || (aiParserMode === 'openai' ? 'OpenAI mode' : 'Serverless')}
+            />
+            <DashboardCard
+              label="ATS Score"
+              value={
+                report.resumeAnalysis?.atsScore !== undefined
+                  ? `${report.resumeAnalysis.atsScore}`
+                  : 'N/A'
+              }
+              meta={report.resumeAnalysis?.atsReadiness || 'Upload resume'}
+            />
+            <DashboardCard
+              label="LinkedIn"
+              value={connections.length ? `${connections.length} connections` : 'Not parsed'}
+              meta={linkedInAiStatus || linkedInStatus || 'Upload connections file'}
+            />
+          </View>
+
+          <View style={styles.dashboardGrid}>
+            <DashboardCard
+              label="Market Snapshot"
+              value={mergedProfile.location || 'Location needed'}
+              meta={report.marketSnapshot.summary}
+            />
+            <DashboardCard
+              label="AI Resilience"
+              value={report.aiResilience.title}
+              meta={report.aiResilience.summary}
+            />
+            <DashboardCard
+              label="AI Forward"
+              value={report.aiForward.title}
+              meta={report.aiForward.summary}
+            />
+            <DashboardCard
+              label="Demographic Strategy"
+              value={report.demographicStrategy.title}
+              meta={report.demographicStrategy.summary}
+            />
+          </View>
+
+          <Text style={styles.label}>Quick links</Text>
+          <View style={styles.linkRow}>
+            <LinkButton label="Resume Intake" onPress={() => scrollToSection('resume')} />
+            <LinkButton label="AI Parser" onPress={() => scrollToSection('ai-parser')} />
+            <LinkButton label="LinkedIn" onPress={() => scrollToSection('linkedin')} />
+            <LinkButton label="Detailed Report" onPress={() => scrollToSection('detailed-report')} />
+          </View>
+
+          <Pressable
+            style={styles.secondaryButton}
+            onPress={() => setShowDetailedReport((prev) => !prev)}
+          >
+            <Text style={styles.secondaryButtonText}>
+              {showDetailedReport ? 'Hide detailed report' : 'Show detailed report'}
+            </Text>
+          </Pressable>
+        </Section>
 
         <Section title="Agent Lineup" subtitle="Multi-agent workflow status">
           <View style={styles.agentGrid}>
@@ -675,6 +774,8 @@ export default function App() {
         <Section
           title="Resume Intake"
           subtitle="Upload your resume so Cipher can extract roles, education, and skills."
+          sectionId="resume"
+          onLayout={handleSectionLayout}
         >
           <Text style={styles.helper}>
             Supports PDF, DOCX, DOC, or plain text. Cipher uses your resume to
@@ -708,6 +809,8 @@ export default function App() {
         <Section
           title="AI Resume Parser (Recommended)"
           subtitle="Use an AI model to extract structured data from the resume."
+          sectionId="ai-parser"
+          onLayout={handleSectionLayout}
         >
           <Text style={styles.helper}>
             Choose how to parse: direct OpenAI (client key) or serverless endpoint.
@@ -921,8 +1024,7 @@ export default function App() {
         >
           {resumeSkills.length === 0 ? (
             <Text style={styles.helper}>
-              No skills detected yet. Ensure your resume includes a Skills section or
-              paste the latest version.
+              No skills detected yet. Ensure your resume includes a Skills section.
             </Text>
           ) : (
             resumeSkills.map((skill) => (
@@ -934,16 +1036,22 @@ export default function App() {
           )}
         </Section>
 
-        <Section
-          title="Market Snapshot (Auto)"
-          subtitle="Cipher's market agent builds this from your location."
-        >
-          <ReportSectionView section={report.marketSnapshot} />
-        </Section>
+        {showDetailedReport ? (
+          <Section
+            title="Market Snapshot (Auto)"
+            subtitle="Cipher's market agent builds this from your location."
+            sectionId="market"
+            onLayout={handleSectionLayout}
+          >
+            <ReportSectionView section={report.marketSnapshot} />
+          </Section>
+        ) : null}
 
         <Section
           title="LinkedIn Network Analysis"
-          subtitle="Upload Connections.csv or paste it for deeper insights."
+          subtitle="Upload your connections export for deeper insights."
+          sectionId="linkedin"
+          onLayout={handleSectionLayout}
         >
           <Text style={styles.helper}>
             Cipher can analyze your network to surface warm introductions, hiring
@@ -994,12 +1102,17 @@ export default function App() {
           </Section>
         ) : null}
 
-        <Section title="Cipher Report" subtitle="Generated insights and action plan.">
-          <ReportSectionView section={report.marketSnapshot} />
-          <ReportSectionView section={report.aiResilience} />
-          <ReportSectionView section={report.aiForward} />
-          <ReportSectionView section={report.demographicStrategy} />
-          <ReportSectionView section={report.careerInsights} />
+        {showDetailedReport ? (
+          <Section
+            title="Detailed Report"
+            subtitle="Generated insights and action plan."
+            sectionId="detailed-report"
+            onLayout={handleSectionLayout}
+          >
+            <ReportSectionView section={report.aiResilience} />
+            <ReportSectionView section={report.aiForward} />
+            <ReportSectionView section={report.demographicStrategy} />
+            <ReportSectionView section={report.careerInsights} />
 
           <Text style={styles.sectionTitle}>Skills Portfolio</Text>
           {report.skillsPortfolio.length ? (
@@ -1255,7 +1368,14 @@ export default function App() {
               ))}
             </View>
           ) : null}
-        </Section>
+          </Section>
+        ) : (
+          <Section title="Detailed Report" subtitle="Hidden for readability.">
+            <Text style={styles.helper}>
+              Use the dashboard to open the detailed report when you need the full output.
+            </Text>
+          </Section>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -1265,12 +1385,23 @@ const Section = ({
   title,
   subtitle,
   children,
+  sectionId,
+  onLayout,
 }: {
   title: string;
   subtitle?: string;
   children: React.ReactNode;
+  sectionId?: string;
+  onLayout?: (sectionId: string, y: number) => void;
 }) => (
-  <View style={styles.section}>
+  <View
+    style={styles.section}
+    onLayout={(event) => {
+      if (sectionId && onLayout) {
+        onLayout(sectionId, event.nativeEvent.layout.y);
+      }
+    }}
+  >
     <Text style={styles.sectionTitle}>{title}</Text>
     {subtitle ? <Text style={styles.sectionSubtitle}>{subtitle}</Text> : null}
     {children}
@@ -1331,6 +1462,27 @@ const InfoRow = ({ label, value }: { label: string; value: string }) => (
   </View>
 );
 
+const DashboardCard = ({
+  label,
+  value,
+  meta,
+}: {
+  label: string;
+  value: string;
+  meta?: string;
+}) => (
+  <View style={styles.dashboardCard}>
+    <Text style={styles.dashboardLabel}>{label}</Text>
+    <Text style={styles.dashboardValue}>{value}</Text>
+    {meta ? <Text style={styles.dashboardMeta}>{meta}</Text> : null}
+  </View>
+);
+
+const LinkButton = ({ label, onPress }: { label: string; onPress: () => void }) => (
+  <Pressable style={styles.linkButton} onPress={onPress}>
+    <Text style={styles.linkButtonText}>{label}</Text>
+  </Pressable>
+);
 const Chip = ({
   label,
   selected,
@@ -1521,6 +1673,52 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     flexWrap: 'wrap',
     gap: 12,
+  },
+  dashboardGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 12,
+  },
+  dashboardCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    minWidth: 160,
+    flexGrow: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  dashboardLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  dashboardValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '600',
+    marginTop: 6,
+  },
+  dashboardMeta: {
+    color: colors.muted,
+    marginTop: 6,
+    fontSize: 12,
+  },
+  linkRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 12,
+  },
+  linkButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 16,
+  },
+  linkButtonText: {
+    color: colors.text,
   },
   agentCard: {
     backgroundColor: '#121725',
