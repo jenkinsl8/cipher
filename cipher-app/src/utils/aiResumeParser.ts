@@ -1,3 +1,4 @@
+import { Buffer } from 'buffer';
 import { ResumeExtraction, UserProfile } from '../types';
 import { buildSkillInputsFromNames } from './resume';
 
@@ -101,6 +102,50 @@ const extractJsonFromText = (value: string) => {
     return parseJsonSafely(trimmed.slice(first, last + 1));
   }
   return null;
+};
+
+const uploadFileToOpenAI = async ({
+  apiKey,
+  baseUrl,
+  file,
+}: {
+  apiKey: string;
+  baseUrl: string;
+  file: { name: string; mimeType: string; data: string };
+}) => {
+  const upload = async (purpose: string) => {
+    const binary = Buffer.from(file.data, 'base64');
+    const blob = new Blob([binary], {
+      type: file.mimeType || 'application/octet-stream',
+    });
+    const formData = new FormData();
+    formData.append('purpose', purpose);
+    formData.append('file', blob, file.name || 'resume');
+
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/files`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: formData,
+    });
+
+    const rawText = await response.text();
+    if (!response.ok) {
+      return { id: '', error: rawText, status: response.status };
+    }
+
+    const data = parseJsonSafely(rawText);
+    return { id: data?.id || '', error: '', status: response.status };
+  };
+
+  const primary = await upload('assistants');
+  if (primary.id) return primary.id;
+
+  const fallback = await upload('user_data');
+  if (fallback.id) return fallback.id;
+
+  throw new Error(`File upload failed: ${primary.error || fallback.error}`);
 };
 
 export const parseResumeWithServerless = async ({
@@ -217,6 +262,12 @@ ${resumeText}`;
   };
 
   if (file?.data) {
+    const fileId = await uploadFileToOpenAI({
+      apiKey,
+      baseUrl,
+      file,
+    });
+
     const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/responses`, {
       method: 'POST',
       headers,
@@ -234,8 +285,7 @@ ${resumeText}`;
               { type: 'input_text', text: prompt },
               {
                 type: 'input_file',
-                file_data: file.data,
-                filename: file.name,
+                file_id: fileId,
               },
             ],
           },
