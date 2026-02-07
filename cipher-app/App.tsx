@@ -94,6 +94,36 @@ const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   return new Uint8Array(Buffer.from(base64, 'base64'));
 };
 
+const blobToBase64 = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result?.toString() || '';
+      const base64 = result.split(',')[1] || '';
+      resolve(base64);
+    };
+    reader.onerror = () => reject(new Error('Failed to read file data.'));
+    reader.readAsDataURL(blob);
+  });
+
+const readAssetBase64 = async (asset: DocumentPicker.DocumentPickerAsset) => {
+  if (Platform.OS === 'web') {
+    const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
+    if (assetFile) {
+      return blobToBase64(assetFile);
+    }
+    if (asset.uri) {
+      const response = await fetch(asset.uri);
+      const blob = await response.blob();
+      return blobToBase64(blob);
+    }
+  }
+
+  return FileSystem.readAsStringAsync(asset.uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
+};
+
 const isHttpsContext = () => {
   if (Platform.OS !== 'web') return false;
   if (typeof window === 'undefined') return false;
@@ -236,6 +266,11 @@ export default function App() {
 
       if (extension === 'pdf' || mimeType === 'application/pdf') {
         try {
+          const base64 = await readAssetBase64(asset);
+          if (!base64) {
+            setResumeStatus('Could not read PDF data for AI parsing.');
+            return;
+          }
           const binary = await readAssetBinary(asset);
           if (!binary?.length) {
             setResumeStatus('Could not read PDF data. Paste resume text.');
@@ -244,7 +279,7 @@ export default function App() {
           setResumeFilePayload({
             name,
             mimeType: mimeType || 'application/pdf',
-            data: Buffer.from(binary).toString('base64'),
+            data: base64,
           });
           const content = await extractTextFromPdfBinary(binary);
           if (content) {
@@ -272,6 +307,11 @@ export default function App() {
           'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       ) {
         try {
+          const base64 = await readAssetBase64(asset);
+          if (!base64) {
+            setResumeStatus('Could not read DOCX data for AI parsing.');
+            return;
+          }
           const binary = await readAssetBinary(asset);
           if (!binary?.length) {
             setResumeStatus('Could not read DOCX data. Paste resume text.');
@@ -282,7 +322,7 @@ export default function App() {
             mimeType:
               mimeType ||
               'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            data: Buffer.from(binary).toString('base64'),
+            data: base64,
           });
           const content = await extractTextFromDocxBinary(binary);
           if (content) {
@@ -306,6 +346,11 @@ export default function App() {
 
       if (extension === 'doc' || mimeType === 'application/msword') {
         try {
+          const base64 = await readAssetBase64(asset);
+          if (!base64) {
+            setResumeStatus('Could not read DOC data for AI parsing.');
+            return;
+          }
           const binary = await readAssetBinary(asset);
           if (!binary?.length) {
             setResumeStatus('Could not read DOC data. Paste resume text.');
@@ -314,7 +359,7 @@ export default function App() {
           setResumeFilePayload({
             name,
             mimeType: mimeType || 'application/msword',
-            data: Buffer.from(binary).toString('base64'),
+            data: base64,
           });
           const content = await extractTextFromDocBinary(binary);
           if (content) {
@@ -346,10 +391,15 @@ export default function App() {
       const content = await FileSystem.readAsStringAsync(asset.uri, {
         encoding: FileSystem.EncodingType.UTF8,
       });
+      const base64 = await readAssetBase64(asset);
+      if (!base64) {
+        setResumeStatus('Could not read file data for AI parsing.');
+        return;
+      }
       setResumeFilePayload({
         name,
         mimeType: mimeType || 'text/plain',
-        data: Buffer.from(content, 'utf8').toString('base64'),
+        data: base64,
       });
       setResumeText(content);
       setResumeStatus(`Loaded ${content.split('\n').length} lines.`);
