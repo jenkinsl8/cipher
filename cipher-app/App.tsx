@@ -216,6 +216,11 @@ export default function App() {
     Array<{ role: 'user' | 'assistant'; content: string }>
   >([]);
   const [agentChatStatus, setAgentChatStatus] = useState('');
+  const [marketQuestion, setMarketQuestion] = useState('');
+  const [marketThread, setMarketThread] = useState<
+    Array<{ role: 'user' | 'assistant'; content: string }>
+  >([]);
+  const [marketChatStatus, setMarketChatStatus] = useState('');
 
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
@@ -793,6 +798,74 @@ export default function App() {
     }
   };
 
+  const handleMarketAgentChat = async () => {
+    const question = marketQuestion.trim();
+    if (!question) {
+      setMarketChatStatus('Add a question for the market agent before sending.');
+      return;
+    }
+    if (aiParserMode !== 'openai') {
+      setMarketChatStatus('Market agent chat requires OpenAI mode. Switch to OpenAI API key.');
+      return;
+    }
+    if (!aiApiKey.trim()) {
+      setMarketChatStatus('Add your OpenAI API key to enable market agent chat.');
+      return;
+    }
+
+    const marketContext = [
+      `Location: ${mergedProfile.location || 'Not provided'}`,
+      `Market indicators: ${report.marketSnapshot.summary}`,
+      `Hiring trends: ${report.marketSnapshot.bullets?.[0] || 'Not provided'}`,
+      `AI trends: ${report.marketSnapshot.bullets?.[3] || 'Not provided'}`,
+    ].join('\n');
+
+    const nextThread = [...marketThread, { role: 'user', content: question }].slice(-6);
+    setMarketThread(nextThread);
+    setMarketQuestion('');
+    setMarketChatStatus('Sentinel is analyzing market conditions...');
+
+    try {
+      const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${aiApiKey.trim()}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: aiModel.trim() || 'gpt-4o',
+          temperature: 0.3,
+          messages: [
+            {
+              role: 'system',
+              content:
+                `You are Sentinel, a market conditions analyst. Use the context below. ` +
+                `Be realistic, conservative, and cite likely signals. Ask one clarifying question if needed.\n\n${marketContext}`,
+            },
+            ...nextThread,
+          ],
+        }),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Market agent failed (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const reply = data.choices?.[0]?.message?.content?.trim() || '';
+      if (!reply) {
+        throw new Error('Market agent did not return a response.');
+      }
+      setMarketThread([...nextThread, { role: 'assistant', content: reply }]);
+      setMarketChatStatus('');
+    } catch (error) {
+      setMarketChatStatus(
+        error instanceof Error ? error.message : 'Market agent chat failed. Try again.'
+      );
+    }
+  };
+
   const agentRoster = [
     { name: 'Cipher', role: 'Career strategist', status: 'Active' },
     {
@@ -1219,6 +1292,32 @@ export default function App() {
             onLayout={handleSectionLayout}
           >
             <ReportSectionView section={report.marketSnapshot} />
+            <Text style={styles.helper}>
+              Ask Sentinel for localized market conditions, hiring signals, or trends.
+            </Text>
+            <Field
+              label="Ask the market agent"
+              value={marketQuestion}
+              onChangeText={setMarketQuestion}
+              placeholder="Ask about hiring signals, layoffs, or salary trends."
+              multiline
+            />
+            <Pressable style={styles.primaryButton} onPress={handleMarketAgentChat}>
+              <Text style={styles.primaryButtonText}>Ask Sentinel</Text>
+            </Pressable>
+            {marketChatStatus ? <Text style={styles.helper}>{marketChatStatus}</Text> : null}
+            {marketThread.length ? (
+              marketThread.map((message, index) => (
+                <View key={`${message.role}-${index}`} style={styles.chatBubble}>
+                  <Text style={styles.chatRole}>
+                    {message.role === 'user' ? 'You' : 'Sentinel'}
+                  </Text>
+                  <Text style={styles.chatText}>{message.content}</Text>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.helper}>No market agent responses yet.</Text>
+            )}
           </Section>
         ) : null}
 
