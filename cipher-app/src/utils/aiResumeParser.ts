@@ -1,4 +1,3 @@
-import { Buffer } from 'buffer';
 import { ResumeExtraction, UserProfile } from '../types';
 import { buildSkillInputsFromNames } from './resume';
 
@@ -104,49 +103,11 @@ const extractJsonFromText = (value: string) => {
   return null;
 };
 
-const uploadFileToOpenAI = async ({
-  apiKey,
-  baseUrl,
-  file,
-}: {
-  apiKey: string;
-  baseUrl: string;
-  file: { name: string; mimeType: string; data: string };
-}) => {
-  const upload = async (purpose: string) => {
-    const binary = Buffer.from(file.data, 'base64');
-    const blob = new Blob([binary], {
-      type: file.mimeType || 'application/octet-stream',
-    });
-    const formData = new FormData();
-    formData.append('purpose', purpose);
-    formData.append('file', blob, file.name || 'resume');
-
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/files`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-      },
-      body: formData,
-    });
-
-    const rawText = await response.text();
-    if (!response.ok) {
-      return { id: '', error: rawText, status: response.status };
-    }
-
-    const data = parseJsonSafely(rawText);
-    return { id: data?.id || '', error: '', status: response.status };
-  };
-
-  const primary = await upload('assistants');
-  if (primary.id) return primary.id;
-
-  const fallback = await upload('user_data');
-  if (fallback.id) return fallback.id;
-
-  throw new Error(`File upload failed: ${primary.error || fallback.error}`);
-};
+const buildJsonSchemaPayload = () => ({
+  name: 'resume_parse',
+  schema: buildJsonSchema().schema,
+  strict: true,
+});
 
 export const parseResumeWithServerless = async ({
   model,
@@ -262,18 +223,18 @@ ${resumeText}`;
   };
 
   if (file?.data) {
-    const fileId = await uploadFileToOpenAI({
-      apiKey,
-      baseUrl,
-      file,
-    });
-
-    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/responses`, {
+    const fileData = `data:${file.mimeType || 'application/pdf'};base64,${file.data}`;
+    const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
       method: 'POST',
       headers,
       body: JSON.stringify({
         model,
-        input: [
+        temperature: 0,
+        response_format: {
+          type: 'json_schema',
+          json_schema: buildJsonSchemaPayload(),
+        },
+        messages: [
           {
             role: 'system',
             content:
@@ -282,21 +243,20 @@ ${resumeText}`;
           {
             role: 'user',
             content: [
-              { type: 'input_text', text: prompt },
               {
-                type: 'input_file',
-                file_id: fileId,
+                type: 'file',
+                file: {
+                  filename: file.name,
+                  file_data: fileData,
+                },
+              },
+              {
+                type: 'text',
+                text: prompt,
               },
             ],
           },
         ],
-        text: {
-          format: {
-            name: 'resume_parse',
-            type: 'json_schema',
-            json_schema: buildJsonSchema(),
-          },
-        },
       }),
     });
 
@@ -305,16 +265,13 @@ ${resumeText}`;
       throw new Error(`AI parser failed (${response.status}): ${errorText}`);
     }
 
-    const rawText = await response.text();
-    const data = parseJsonSafely(rawText);
-    const outputText =
-      data?.output?.[0]?.content?.find((item: { type?: string }) => item.type === 'output_text')
-        ?.text ||
-      data?.output_text ||
-      data?.output?.[0]?.content?.[0]?.text ||
-      '';
+    const data = await response.json();
+    const content = data.choices?.[0]?.message?.content || '';
+    if (!content) {
+      throw new Error('AI parser returned empty response.');
+    }
 
-    const parsed = extractJsonFromText(outputText);
+    const parsed = extractJsonFromText(content);
     if (!parsed) {
       throw new Error('AI parser returned invalid JSON.');
     }
@@ -327,7 +284,10 @@ ${resumeText}`;
     body: JSON.stringify({
       model,
       temperature: 0,
-      response_format: { type: 'json_object' },
+      response_format: {
+        type: 'json_schema',
+        json_schema: buildJsonSchemaPayload(),
+      },
       messages: [
         {
           role: 'system',

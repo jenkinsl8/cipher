@@ -42,7 +42,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     jest.resetAllMocks();
   });
 
-  it('uploads PDF to files API and parses JSON', async () => {
+  it('sends PDF file data to chat completions and parses JSON', async () => {
     const payload = {
       profile: {
         name: 'Lisa Jenkins',
@@ -57,15 +57,13 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       warnings: [],
     };
     const fetchMock = globalThis.fetch as jest.Mock;
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify({ id: 'file-123' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify(createOpenAiResponse(payload)),
-      });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify(payload) } }],
+      }),
+      text: async () => JSON.stringify(createOpenAiResponse(payload)),
+    });
 
     const result = await parseResumeWithOpenAI({
       apiKey: 'test-key',
@@ -82,16 +80,17 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     expect(result.profile.name).toBe('Lisa Jenkins');
     expect(result.skills.length).toBe(2);
 
-    const [uploadUrl] = fetchMock.mock.calls[0];
-    const [responseUrl, responseOptions] = fetchMock.mock.calls[1];
-    expect(uploadUrl).toContain('/v1/files');
-    expect(responseUrl).toContain('/v1/responses');
-    const body = JSON.parse(responseOptions.body);
-    const fileInput = body.input[1].content.find((item: { type: string }) => item.type === 'input_file');
-    expect(fileInput.file_id).toBe('file-123');
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain('/v1/chat/completions');
+    const body = JSON.parse(options.body);
+    const fileInput = body.messages[1].content.find(
+      (item: { type: string }) => item.type === 'file'
+    );
+    expect(fileInput.file.filename).toBe('resume.pdf');
+    expect(fileInput.file.file_data).toBe('data:application/pdf;base64,dGVzdA==');
   });
 
-  it('uploads DOCX to files API and parses JSON', async () => {
+  it('sends DOCX file data to chat completions and parses JSON', async () => {
     const payload = {
       profile: {
         name: 'Alex Doe',
@@ -106,15 +105,13 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       warnings: [],
     };
     const fetchMock = globalThis.fetch as jest.Mock;
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify({ id: 'file-456' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify(createOpenAiResponse(payload)),
-      });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify(payload) } }],
+      }),
+      text: async () => JSON.stringify(createOpenAiResponse(payload)),
+    });
 
     const result = await parseResumeWithOpenAI({
       apiKey: 'test-key',
@@ -131,16 +128,19 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     expect(result.profile.currentRole).toBe('Program Manager');
     expect(result.skills.length).toBe(2);
 
-    const [uploadUrl] = fetchMock.mock.calls[0];
-    const [responseUrl, responseOptions] = fetchMock.mock.calls[1];
-    expect(uploadUrl).toContain('/v1/files');
-    expect(responseUrl).toContain('/v1/responses');
-    const body = JSON.parse(responseOptions.body);
-    const fileInput = body.input[1].content.find((item: { type: string }) => item.type === 'input_file');
-    expect(fileInput.file_id).toBe('file-456');
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain('/v1/chat/completions');
+    const body = JSON.parse(options.body);
+    const fileInput = body.messages[1].content.find(
+      (item: { type: string }) => item.type === 'file'
+    );
+    expect(fileInput.file.filename).toBe('resume.docx');
+    expect(fileInput.file.file_data).toBe(
+      'data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,ZG9jeA=='
+    );
   });
 
-  it('uploads file before sending to responses API', async () => {
+  it('includes base64 data URI in file payload', async () => {
     const payload = {
       profile: {
         name: 'Casey Lee',
@@ -155,15 +155,13 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       warnings: [],
     };
     const fetchMock = globalThis.fetch as jest.Mock;
-    fetchMock
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify({ id: 'file-789' }),
-      })
-      .mockResolvedValueOnce({
-        ok: true,
-        text: async () => JSON.stringify(createOpenAiResponse(payload)),
-      });
+    fetchMock.mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify(payload) } }],
+      }),
+      text: async () => JSON.stringify(createOpenAiResponse(payload)),
+    });
 
     const base64 = 'AAECAwQFBgcICQorLw==';
     await parseResumeWithOpenAI({
@@ -178,12 +176,14 @@ describe('parseResumeWithOpenAI with file uploads', () => {
       },
     });
 
-    const [uploadUrl] = fetchMock.mock.calls[0];
-    const [responseUrl, responseOptions] = fetchMock.mock.calls[1];
-    expect(uploadUrl).toContain('/v1/files');
-    expect(responseUrl).toContain('/v1/responses');
-    const body = JSON.parse(responseOptions.body);
-    const fileInput = body.input[1].content.find((item: { type: string }) => item.type === 'input_file');
-    expect(fileInput.file_id).toBe('file-789');
+    const [url, options] = fetchMock.mock.calls[0];
+    expect(url).toContain('/v1/chat/completions');
+    const body = JSON.parse(options.body);
+    const fileInput = body.messages[1].content.find(
+      (item: { type: string }) => item.type === 'file'
+    );
+    expect(fileInput.file.file_data).toBe(
+      `data:application/pdf;base64,${base64}`
+    );
   });
 });
