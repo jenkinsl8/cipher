@@ -108,6 +108,7 @@ export type CareerPathTier = {
   overview: string;
   riskReward: string;
   earningPotential: string;
+  demographicNotes: string[];
   threeYearPlan: {
     year1: string[];
     year2: string[];

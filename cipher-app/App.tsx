@@ -1246,6 +1246,16 @@ export default function App() {
                     Earning potential: {path.earningPotential}
                   </Text>
                   <Text style={styles.reportText}>AI resilience: {path.aiResilience}</Text>
+                  {path.demographicNotes.length ? (
+                    <>
+                      <Text style={styles.reportSubheading}>Demographic considerations</Text>
+                      {path.demographicNotes.map((item) => (
+                        <Text key={item} style={styles.reportBullet}>
+                          - {item}
+                        </Text>
+                      ))}
+                    </>
+                  ) : null}
                   <Text style={styles.reportSubheading}>3-Year Plan</Text>
                   {path.threeYearPlan.year1.map((item) => (
                     <Text key={item} style={styles.reportBullet}>

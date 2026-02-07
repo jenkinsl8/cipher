@@ -430,7 +430,7 @@ const buildResumeAnalysis = (
   };
 };
 
-const buildMarketSnapshot = (market: MarketSnapshot): ReportSection => {
+const buildMarketSnapshot = (market: MarketSnapshot, profile: UserProfile): ReportSection => {
   const warnings = [];
   if (!market.updatedAt) warnings.push('Add the date of your latest market scan.');
   if (!market.sources) warnings.push('Include sources like BLS, LinkedIn, or WEF reports.');
@@ -450,6 +450,7 @@ const buildMarketSnapshot = (market: MarketSnapshot): ReportSection => {
       market.aiTrends
         ? `AI-related trends: ${market.aiTrends}`
         : 'AI trends: Add AI hiring or automation signals.',
+      `Demographic lens: ${buildDemographicCareerNotes(profile).join(' ')}`,
       market.sources ? `Sources: ${market.sources}` : 'Sources: Add trusted data sources.',
       ...warnings,
     ],
@@ -483,6 +484,35 @@ const buildDemographicStrategy = (profile: UserProfile): ReportSection => {
       'Use compensation benchmarks to reduce negotiation bias.',
     ],
   };
+};
+
+const buildDemographicCareerNotes = (profile: UserProfile): string[] => {
+  const notes: string[] = [];
+  const age = parseInt(profile.age, 10);
+  if (Number.isNaN(age)) {
+    notes.push('Add age for more precise market positioning.');
+  } else if (age < 30) {
+    notes.push('Early-career advantage in fast-growing roles; prioritize skill proof and rapid iteration.');
+  } else if (age < 45) {
+    notes.push('Mid-career leverage: target roles with clear advancement and leadership scope.');
+  } else {
+    notes.push('Experience advantage: prioritize roles valuing domain depth, mentorship, and strategic ownership.');
+  }
+
+  if (profile.gender) {
+    notes.push('Prioritize employers with strong representation and DEI metrics in your function.');
+    notes.push('Use compensation benchmarks to counter negotiation bias.');
+  } else {
+    notes.push('Add gender data to refine employer targeting and negotiation strategy.');
+  }
+
+  if (profile.raceEthnicity) {
+    notes.push('Leverage affinity networks and employers with proven inclusive promotion practices.');
+  } else {
+    notes.push('Add race/ethnicity data to tailor network and employer strategy.');
+  }
+
+  return notes;
 };
 
 const buildAIForward = (skills: SkillInput[], goals: CareerGoal[]): ReportSection => {
@@ -540,6 +570,7 @@ const buildAIForward = (skills: SkillInput[], goals: CareerGoal[]): ReportSectio
 const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): CareerPathTier[] => {
   const baseRole = profile.currentRole || 'your current role';
   const mainSkill = topSkills[0]?.name || 'core strengths';
+  const demographicNotes = buildDemographicCareerNotes(profile);
 
   return [
     {
@@ -548,6 +579,7 @@ const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): Care
       overview: `Follow the established ladder in ${baseRole}, emphasizing ${mainSkill}.`,
       riskReward: 'Lower risk, predictable growth, strong benefits.',
       earningPotential: 'Steady increases with clear promotion milestones.',
+      demographicNotes,
       threeYearPlan: {
         year1: [
           'Target next-level roles and document measurable wins.',
@@ -607,6 +639,7 @@ const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): Care
         'Leverage transferable skills to move into adjacent, faster-growing roles.',
       riskReward: 'Moderate risk, accelerated growth potential.',
       earningPotential: 'Higher upside if pivot succeeds; requires proof of competence.',
+      demographicNotes,
       threeYearPlan: {
         year1: [
           'Identify adjacent roles with faster growth and skill overlap.',
@@ -665,6 +698,7 @@ const buildCareerPaths = (profile: UserProfile, topSkills: SkillInsight[]): Care
         'Pursue a high-upside path such as founding, AI leadership, or rapid executive growth.',
       riskReward: 'High risk, exponential potential.',
       earningPotential: 'Significant upside but uncertain outcomes.',
+      demographicNotes,
       threeYearPlan: {
         year1: [
           'Validate a market gap using rapid customer discovery.',
@@ -948,7 +982,7 @@ export const generateCipherReport = (
   };
 
   const report: CipherReport = {
-    marketSnapshot: buildMarketSnapshot(market),
+    marketSnapshot: buildMarketSnapshot(market, profile),
     skillsPortfolio: rankedSkills.slice(0, 10),
     aiResilience,
     aiForward: buildAIForward(skills, profile.careerGoals),
