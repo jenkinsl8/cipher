@@ -1686,7 +1686,7 @@ export default function App() {
           subtitle="AI market agent builds this from public sources and your location."
         >
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
-            <GraphicSectionBody section={report.marketSnapshot} />
+            <GraphicSectionBody section={report.marketSnapshot} highlightMarket />
             {!hasAiReport ? (
               <Text style={styles.helper}>
                 Run AI analysis to generate market conditions and citations.
@@ -1694,7 +1694,7 @@ export default function App() {
             ) : null}
           </CollapsibleCard>
           <CollapsibleCard title={report.marketOutlook.title}>
-            <GraphicSectionBody section={report.marketOutlook} />
+            <GraphicSectionBody section={report.marketOutlook} highlightMarket />
           </CollapsibleCard>
           <CollapsibleCard title={report.geographicOptions.title}>
             <GraphicSectionBody section={report.geographicOptions} />
@@ -2402,28 +2402,139 @@ const ReportSectionBody = ({
 
 const GraphicSectionBody = ({
   section,
+  highlightMarket = false,
 }: {
   section: { title: string; summary: string; bullets?: string[] };
-}) => (
-  <View style={styles.graphicSection}>
-    <View style={styles.graphicSummaryCard}>
-      <Text style={styles.graphicLabel}>Summary</Text>
-      <Text style={styles.graphicSummaryText}>{section.summary}</Text>
-    </View>
-    {section.bullets?.length ? (
-      <View style={styles.insightList}>
-        {section.bullets.map((item, index) => (
-          <View key={item} style={styles.insightRow}>
-            <View style={styles.insightBadge}>
-              <Text style={styles.insightBadgeText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.insightText}>{item}</Text>
-          </View>
-        ))}
+  highlightMarket?: boolean;
+}) => {
+  const trendConfig = {
+    up: { label: 'Up', icon: '↑' },
+    down: { label: 'Down', icon: '↓' },
+    neutral: { label: 'Flat', icon: '→' },
+  };
+  const getMarketSignal = (value: string) => {
+    const lowered = value.toLowerCase();
+    const hasPositive = /\b(strong|good|high|growing|increase|rising|up)\b/i.test(lowered);
+    const hasNegative = /\b(weak|bad|low|decline|decrease|falling|down)\b/i.test(lowered);
+    let tone: 'positive' | 'negative' | 'neutral' = 'neutral';
+    if (hasPositive && !hasNegative) tone = 'positive';
+    if (hasNegative && !hasPositive) tone = 'negative';
+
+    const trend =
+      /\b(rise|rising|increase|up|accelerat)\b/i.test(lowered)
+        ? 'up'
+        : /\b(fall|falling|decrease|down|slow)\b/i.test(lowered)
+          ? 'down'
+          : 'neutral';
+
+    return { tone, trend };
+  };
+  const renderMarketSignal = (value: string) => {
+    const signal = getMarketSignal(value);
+    return (
+      <View style={styles.signalRow}>
+        <View
+          style={[
+            styles.signalDot,
+            signal.tone === 'positive'
+              ? styles.signalDotPositive
+              : signal.tone === 'negative'
+                ? styles.signalDotNegative
+                : styles.signalDotNeutral,
+          ]}
+        />
+        <Text style={styles.signalLabel}>
+          {signal.tone === 'positive'
+            ? 'Good'
+            : signal.tone === 'negative'
+              ? 'Bad'
+              : 'Mixed'}
+        </Text>
+        <View style={styles.signalDivider} />
+        <Text style={styles.signalTrendIcon}>
+          {trendConfig[signal.trend].icon}
+        </Text>
+        <Text style={styles.signalTrendLabel}>{trendConfig[signal.trend].label} trend</Text>
       </View>
-    ) : null}
-  </View>
-);
+    );
+  };
+  const bullets = section.bullets ?? [];
+  const highlightRules = highlightMarket
+    ? [
+        { key: 'salary', label: 'Salary range', matcher: /(salary|compensation|pay|\$)/i },
+        {
+          key: 'indicators',
+          label: 'Market indicators',
+          matcher: /(indicator|signal|demand|hiring|open roles)/i,
+        },
+        {
+          key: 'stats',
+          label: 'Key statistics',
+          matcher: /(stat|stats|%|percent|rate|growth|median|average|benchmark)/i,
+        },
+      ]
+    : [];
+  const highlightMap = new Map<string, { label: string; value: string }>();
+  const remainingBullets: string[] = [];
+
+  bullets.forEach((item) => {
+    const match = highlightRules.find(
+      (rule) => !highlightMap.has(rule.key) && rule.matcher.test(item)
+    );
+    if (match) {
+      highlightMap.set(match.key, { label: match.label, value: item });
+    } else {
+      remainingBullets.push(item);
+    }
+  });
+
+  return (
+    <View style={styles.graphicSection}>
+      <View style={styles.graphicSummaryCard}>
+        <Text style={styles.graphicLabel}>Summary</Text>
+        <Text style={styles.graphicSummaryText}>{section.summary}</Text>
+      </View>
+      {highlightMap.size ? (
+        <View style={styles.highlightGrid}>
+          {[...highlightMap.values()].map((highlight) => {
+            return (
+              <View key={highlight.label} style={styles.highlightCard}>
+                <Text style={styles.highlightLabel}>{highlight.label}</Text>
+                {highlightMarket ? renderMarketSignal(highlight.value) : null}
+                <Text style={styles.highlightValue}>{highlight.value}</Text>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+      {remainingBullets.length ? (
+        <View style={styles.insightList}>
+          {remainingBullets.map((item, index) => {
+            return (
+              <View
+                key={item}
+                style={[
+                  styles.insightRow,
+                  highlightMarket ? styles.marketInsightRow : null,
+                ]}
+              >
+                {!highlightMarket ? (
+                  <View style={styles.insightBadge}>
+                    <Text style={styles.insightBadgeText}>{index + 1}</Text>
+                  </View>
+                ) : null}
+                <View style={styles.insightContent}>
+                  {highlightMarket ? renderMarketSignal(item) : null}
+                  <Text style={styles.insightText}>{item}</Text>
+                </View>
+              </View>
+            );
+          })}
+        </View>
+      ) : null}
+    </View>
+  );
+};
 
 const CollapsibleCard = ({
   title,
@@ -2975,6 +3086,76 @@ const styles = StyleSheet.create({
     fontSize: 15,
     lineHeight: 22,
   },
+  highlightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  highlightCard: {
+    backgroundColor: '#131c2c',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    minWidth: 180,
+    flexGrow: 1,
+  },
+  highlightLabel: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  highlightValue: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+  },
+  signalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  signalDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  signalDotPositive: {
+    backgroundColor: '#37d67a',
+  },
+  signalDotNegative: {
+    backgroundColor: '#ff6b6b',
+  },
+  signalDotNeutral: {
+    backgroundColor: '#f6c343',
+  },
+  signalLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  signalDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: colors.border,
+    marginHorizontal: 4,
+  },
+  signalTrendIcon: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  signalTrendLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
   insightList: {
     gap: 10,
   },
@@ -2988,6 +3169,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  marketInsightRow: {
+    paddingLeft: 12,
+  },
   insightBadge: {
     width: 28,
     height: 28,
@@ -3000,6 +3184,9 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '700',
     fontSize: 12,
+  },
+  insightContent: {
+    flex: 1,
   },
   insightText: {
     color: colors.text,
