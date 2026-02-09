@@ -2466,6 +2466,7 @@ const GraphicSectionBody = ({
   const highlightRules = highlightMarket
     ? [
         { key: 'salary', label: 'Salary range', matcher: /(salary|compensation|pay|\$)/i },
+        { key: 'driver', label: 'Market driver', matcher: /(driver|catalyst|tailwind)/i },
         {
           key: 'indicators',
           label: 'Market indicators',
@@ -2480,6 +2481,24 @@ const GraphicSectionBody = ({
     : [];
   const highlightMap = new Map<string, { label: string; value: string }>();
   const remainingBullets: string[] = [];
+
+  const extractMedianSalary = (value: string) => {
+    const medianMatch = value.match(/median[^$]*(\$\s?[\d,]+(?:\.\d+)?[kKmM]?)/i);
+    if (medianMatch?.[1]) {
+      return medianMatch[1].replace(/\s+/g, ' ').trim();
+    }
+    const dollarMatches = value.match(/\$\s?[\d,]+(?:\.\d+)?[kKmM]?/g);
+    if (!dollarMatches?.length) return null;
+    const normalized = dollarMatches.map((entry) => entry.replace(/\s+/g, ' ').trim());
+    const middleIndex = Math.floor((normalized.length - 1) / 2);
+    return normalized[middleIndex];
+  };
+
+  const stripSalaryFromText = (value: string) => {
+    const withoutMedian = value.replace(/median[^$]*\$\s?[\d,]+(?:\.\d+)?[kKmM]?/gi, '').trim();
+    const withoutDollars = withoutMedian.replace(/\$\s?[\d,]+(?:\.\d+)?[kKmM]?/g, '').trim();
+    return withoutDollars.replace(/\s{2,}/g, ' ').replace(/^[-–:]+/, '').trim();
+  };
 
   bullets.forEach((item) => {
     const match = highlightRules.find(
@@ -2502,11 +2521,21 @@ const GraphicSectionBody = ({
       {highlightMap.size ? (
         <View style={styles.highlightGrid}>
           {[...highlightMap.values()].map((highlight) => {
+            const isSalary = highlight.label === 'Salary range';
+            const medianSalary = isSalary ? extractMedianSalary(highlight.value) : null;
+            const highlightText = isSalary
+              ? stripSalaryFromText(highlight.value)
+              : highlight.value;
             return (
               <View key={highlight.label} style={styles.highlightCard}>
                 <Text style={styles.highlightLabel}>{highlight.label}</Text>
                 {highlightMarket ? <SignalRow text={highlight.value} /> : null}
-                <Text style={styles.highlightValue}>{highlight.value}</Text>
+                {isSalary && medianSalary ? (
+                  <Text style={styles.highlightMedian}>Median salary: {medianSalary}</Text>
+                ) : null}
+                {highlightText ? (
+                  <Text style={styles.highlightValue}>{highlightText}</Text>
+                ) : null}
               </View>
             );
           })}
@@ -3125,6 +3154,12 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexWrap: 'wrap',
     maxWidth: '100%',
+  },
+  highlightMedian: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+    marginBottom: 4,
   },
   signalRow: {
     flexDirection: 'row',
