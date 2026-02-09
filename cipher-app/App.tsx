@@ -291,6 +291,29 @@ export default function App() {
       .sort((a, b) => b.marketValueScore - a.marketValueScore)
       .slice(0, 5);
   }, [report.skillsPortfolio]);
+  const highDemandSkills = useMemo(() => {
+    return report.skillsPortfolio.filter((skill) =>
+      skill.demandLevel.toLowerCase().includes('high')
+    );
+  }, [report.skillsPortfolio]);
+  const resumeSkillSet = useMemo(
+    () => new Set(resumeSkills.map((skill) => skill.toLowerCase())),
+    [resumeSkills]
+  );
+  const matchedDemandSkills = useMemo(
+    () =>
+      highDemandSkills.filter((skill) =>
+        resumeSkillSet.has(skill.name.toLowerCase())
+      ),
+    [highDemandSkills, resumeSkillSet]
+  );
+  const gapDemandSkills = useMemo(
+    () =>
+      highDemandSkills.filter(
+        (skill) => !resumeSkillSet.has(skill.name.toLowerCase())
+      ),
+    [highDemandSkills, resumeSkillSet]
+  );
 
   const getRiskTone = (risk: string) => {
     const normalized = risk.toLowerCase();
@@ -1685,6 +1708,56 @@ export default function App() {
           title="Market Conditions"
           subtitle="AI market agent builds this from public sources and your location."
         >
+          <CollapsibleCard title="Demand fit & skill gaps" defaultCollapsed={false}>
+            <View style={styles.marketFitCard}>
+              <Text style={styles.marketFitLabel}>High-demand areas</Text>
+              {highDemandSkills.length ? (
+                <View style={styles.marketChipRow}>
+                  {highDemandSkills.slice(0, 8).map((skill) => (
+                    <View key={skill.name} style={styles.marketChip}>
+                      <Text style={styles.marketChipText}>{skill.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.helper}>
+                  Run AI analysis to surface in-demand skills for your role.
+                </Text>
+              )}
+              <Text style={styles.marketFitLabel}>Your fit in demand areas</Text>
+              {matchedDemandSkills.length ? (
+                <View style={styles.marketChipRow}>
+                  {matchedDemandSkills.slice(0, 8).map((skill) => (
+                    <View key={skill.name} style={styles.marketChipStrong}>
+                      <Text style={styles.marketChipText}>{skill.name}</Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.helper}>
+                  No direct matches found yet between your resume skills and top demand.
+                </Text>
+              )}
+              <View style={styles.marketGapBanner}>
+                <Text style={styles.marketGapTitle}>Skill gaps to close</Text>
+                {gapDemandSkills.length ? (
+                  <>
+                    <Text style={styles.marketGapText}>
+                      {gapDemandSkills.length} high-demand skills are missing from your
+                      current profile.
+                    </Text>
+                    <Text style={styles.marketGapText}>
+                      Focus next: {gapDemandSkills.slice(0, 3).map((skill) => skill.name).join(', ')}
+                    </Text>
+                  </>
+                ) : (
+                  <Text style={styles.marketGapText}>
+                    Your resume already covers the highlighted demand areas.
+                  </Text>
+                )}
+              </View>
+            </View>
+          </CollapsibleCard>
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
             <GraphicSectionBody section={report.marketSnapshot} highlightMarket />
             {!hasAiReport ? (
@@ -1695,12 +1768,21 @@ export default function App() {
           </CollapsibleCard>
           <CollapsibleCard title={report.marketOutlook.title}>
             <GraphicSectionBody section={report.marketOutlook} highlightMarket />
+            {report.internationalPlan ? (
+              <Text style={styles.helper}>
+                International opportunities are summarized in the International Opportunities section
+                below.
+              </Text>
+            ) : null}
           </CollapsibleCard>
           <CollapsibleCard title={report.geographicOptions.title}>
             <GraphicSectionBody section={report.geographicOptions} />
           </CollapsibleCard>
           {report.internationalPlan ? (
-            <CollapsibleCard title={report.internationalPlan.title}>
+            <CollapsibleCard
+              title="International Opportunities"
+              defaultCollapsed={!profile.openToInternational}
+            >
               <GraphicSectionBody section={report.internationalPlan} />
             </CollapsibleCard>
           ) : null}
@@ -3096,6 +3178,62 @@ const styles = StyleSheet.create({
   reportChipText: {
     color: colors.text,
     fontSize: 12,
+  },
+  marketFitCard: {
+    gap: 12,
+  },
+  marketFitLabel: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  marketChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  marketChip: {
+    backgroundColor: '#0f1320',
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  marketChipStrong: {
+    backgroundColor: '#1f3b2f',
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: '#2a6b4f',
+  },
+  marketChipText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  marketGapBanner: {
+    backgroundColor: '#1a1f2e',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  marketGapTitle: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 6,
+  },
+  marketGapText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
   },
   graphicSection: {
     gap: 12,
