@@ -348,6 +348,15 @@ export default function App() {
       })
       .filter(Boolean) as Array<{ name: string; years: number; evidence: string }>;
   }, [matchedDemandSkills, resumeSkillMap]);
+  const missingResumeSignals = useMemo(() => {
+    const missing: string[] = [];
+    if (!mergedProfile.currentRole?.trim()) missing.push('Current role');
+    if (!mergedProfile.yearsExperience?.trim()) missing.push('Years of experience');
+    if (!mergedProfile.education?.trim()) missing.push('Education');
+    if (!mergedProfile.certifications?.trim()) missing.push('Certifications');
+    if (resumeSkills.length === 0) missing.push('Skills list');
+    return missing;
+  }, [mergedProfile, resumeSkills.length]);
   const marketScopes = useMemo(() => {
     const scopes = [
       {
@@ -1838,45 +1847,59 @@ export default function App() {
             </View>
           </CollapsibleCard>
           <CollapsibleCard title="Ideal candidate sketch">
-            <View style={styles.marketCandidateCard}>
-              <Text style={styles.marketFitLabel}>Experience profile</Text>
-              <Text style={styles.marketCandidateText}>
-                {mergedProfile.yearsExperience
-                  ? `${mergedProfile.yearsExperience} years experience noted`
-                  : 'Years of experience not listed in resume.'}
-              </Text>
-              <Text style={styles.marketFitLabel}>Most desired work types</Text>
-              <Text style={styles.marketCandidateText}>
-                {demandSectors.length
-                  ? demandSectors.join(', ')
-                  : 'Run AI analysis to surface in-demand sectors.'}
-              </Text>
-              <Text style={styles.marketFitLabel}>Education & credentials</Text>
-              <Text style={styles.marketCandidateText}>
-                {mergedProfile.education || 'Education not listed in resume.'}
-              </Text>
-              <Text style={styles.marketCandidateText}>
-                {mergedProfile.certifications
-                  ? `Certifications: ${mergedProfile.certifications}`
-                  : 'Certifications not listed in resume.'}
-              </Text>
-              <Text style={styles.marketFitLabel}>High-demand skills with experience</Text>
-              {matchedDemandDetails.length ? (
-                <View style={styles.marketCandidateList}>
-                  {matchedDemandDetails.slice(0, 5).map((skill) => (
-                    <View key={skill.name} style={styles.marketCandidateRow}>
-                      <Text style={styles.marketCandidateStrong}>{skill.name}</Text>
-                      <Text style={styles.marketCandidateMeta}>
-                        {skill.years} yrs {skill.evidence ? `• ${skill.evidence}` : ''}
+            <View style={styles.marketScopeGrid}>
+              {marketScopes.map((scope) => (
+                <View key={`candidate-${scope.key}`} style={styles.marketCandidateCard}>
+                  <Text style={styles.marketScopeTitle}>{scope.label}</Text>
+                  <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
+                  <Text style={styles.marketFitLabel}>Experience profile</Text>
+                  <Text style={styles.marketCandidateText}>
+                    {mergedProfile.yearsExperience
+                      ? `${mergedProfile.yearsExperience} years experience noted`
+                      : 'Years of experience not listed in resume.'}
+                  </Text>
+                  <Text style={styles.marketFitLabel}>Most desired work types</Text>
+                  <Text style={styles.marketCandidateText}>
+                    {demandSectors.length
+                      ? demandSectors.join(', ')
+                      : 'Run AI analysis to surface in-demand sectors.'}
+                  </Text>
+                  <Text style={styles.marketFitLabel}>Education & credentials</Text>
+                  <Text style={styles.marketCandidateText}>
+                    {mergedProfile.education || 'Education not listed in resume.'}
+                  </Text>
+                  <Text style={styles.marketCandidateText}>
+                    {mergedProfile.certifications
+                      ? `Certifications: ${mergedProfile.certifications}`
+                      : 'Certifications not listed in resume.'}
+                  </Text>
+                  <Text style={styles.marketFitLabel}>High-demand skills with experience</Text>
+                  {matchedDemandDetails.length ? (
+                    <View style={styles.marketCandidateList}>
+                      {matchedDemandDetails.slice(0, 5).map((skill) => (
+                        <View key={skill.name} style={styles.marketCandidateRow}>
+                          <Text style={styles.marketCandidateStrong}>{skill.name}</Text>
+                          <Text style={styles.marketCandidateMeta}>
+                            {skill.years} yrs {skill.evidence ? `• ${skill.evidence}` : ''}
+                          </Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.marketCandidateText}>
+                      No resume experience mapped to high-demand skills yet.
+                    </Text>
+                  )}
+                  {missingResumeSignals.length ? (
+                    <View style={styles.marketGapBanner}>
+                      <Text style={styles.marketGapTitle}>Missing from resume</Text>
+                      <Text style={styles.marketGapText}>
+                        {missingResumeSignals.join(', ')}
                       </Text>
                     </View>
-                  ))}
+                  ) : null}
                 </View>
-              ) : (
-                <Text style={styles.marketCandidateText}>
-                  No resume experience mapped to high-demand skills yet.
-                </Text>
-              )}
+              ))}
             </View>
           </CollapsibleCard>
           <CollapsibleCard title="Explore demand opportunities">
