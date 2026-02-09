@@ -297,7 +297,7 @@ export default function App() {
     );
   }, [report.skillsPortfolio]);
   const resumeSkillSet = useMemo(
-    () => new Set(resumeSkills.map((skill) => skill.toLowerCase())),
+    () => new Set(resumeSkills.map((skill) => skill.name.toLowerCase())),
     [resumeSkills]
   );
   const matchedDemandSkills = useMemo(
