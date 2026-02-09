@@ -1824,7 +1824,7 @@ export default function App() {
             <ReportSectionBody section={report.aiForward} />
           </CollapsibleCard>
           <CollapsibleCard title={report.careerInsights.title}>
-            <ReportSectionBody section={report.careerInsights} />
+            <ReportSectionBody section={report.careerInsights} showSignal />
           </CollapsibleCard>
           <CollapsibleCard title="Career Path Options" defaultCollapsed={false}>
             {report.careerPaths.map((path, index) => (
@@ -2376,13 +2376,68 @@ const DashboardCard = ({
   </View>
 );
 
+const trendConfig = {
+  up: { label: 'Up', icon: '↑' },
+  down: { label: 'Down', icon: '↓' },
+  neutral: { label: 'Flat', icon: '→' },
+};
+
+const getSignalFromText = (value: string) => {
+  const lowered = value.toLowerCase();
+  const hasPositive = /\b(strong|good|high|growing|increase|rising|up)\b/i.test(lowered);
+  const hasNegative = /\b(weak|bad|low|decline|decrease|falling|down)\b/i.test(lowered);
+  let tone: 'positive' | 'negative' | 'neutral' = 'neutral';
+  if (hasPositive && !hasNegative) tone = 'positive';
+  if (hasNegative && !hasPositive) tone = 'negative';
+
+  const trend =
+    /\b(rise|rising|increase|up|accelerat)\b/i.test(lowered)
+      ? 'up'
+      : /\b(fall|falling|decrease|down|slow)\b/i.test(lowered)
+        ? 'down'
+        : 'neutral';
+
+  return { tone, trend };
+};
+
+const SignalRow = ({ text }: { text: string }) => {
+  const signal = getSignalFromText(text);
+  return (
+    <View style={styles.signalRow}>
+      <View
+        style={[
+          styles.signalDot,
+          signal.tone === 'positive'
+            ? styles.signalDotPositive
+            : signal.tone === 'negative'
+              ? styles.signalDotNegative
+              : styles.signalDotNeutral,
+        ]}
+      />
+      <Text style={styles.signalLabel}>
+        {signal.tone === 'positive'
+          ? 'Good'
+          : signal.tone === 'negative'
+            ? 'Bad'
+            : 'Mixed'}
+      </Text>
+      <View style={styles.signalDivider} />
+      <Text style={styles.signalTrendIcon}>{trendConfig[signal.trend].icon}</Text>
+      <Text style={styles.signalTrendLabel}>{trendConfig[signal.trend].label} trend</Text>
+    </View>
+  );
+};
+
 const ReportSectionBody = ({
   section,
+  showSignal = false,
 }: {
   section: { title: string; summary: string; bullets?: string[] };
+  showSignal?: boolean;
 }) => (
   <View style={styles.reportDigest}>
     <Text style={styles.reportDigestLabel}>Key takeaway</Text>
+    {showSignal ? <SignalRow text={section.summary} /> : null}
     <Text style={styles.reportDigestText} numberOfLines={3}>
       {section.summary}
     </Text>
@@ -2407,57 +2462,6 @@ const GraphicSectionBody = ({
   section: { title: string; summary: string; bullets?: string[] };
   highlightMarket?: boolean;
 }) => {
-  const trendConfig = {
-    up: { label: 'Up', icon: '↑' },
-    down: { label: 'Down', icon: '↓' },
-    neutral: { label: 'Flat', icon: '→' },
-  };
-  const getMarketSignal = (value: string) => {
-    const lowered = value.toLowerCase();
-    const hasPositive = /\b(strong|good|high|growing|increase|rising|up)\b/i.test(lowered);
-    const hasNegative = /\b(weak|bad|low|decline|decrease|falling|down)\b/i.test(lowered);
-    let tone: 'positive' | 'negative' | 'neutral' = 'neutral';
-    if (hasPositive && !hasNegative) tone = 'positive';
-    if (hasNegative && !hasPositive) tone = 'negative';
-
-    const trend =
-      /\b(rise|rising|increase|up|accelerat)\b/i.test(lowered)
-        ? 'up'
-        : /\b(fall|falling|decrease|down|slow)\b/i.test(lowered)
-          ? 'down'
-          : 'neutral';
-
-    return { tone, trend };
-  };
-  const renderMarketSignal = (value: string) => {
-    const signal = getMarketSignal(value);
-    return (
-      <View style={styles.signalRow}>
-        <View
-          style={[
-            styles.signalDot,
-            signal.tone === 'positive'
-              ? styles.signalDotPositive
-              : signal.tone === 'negative'
-                ? styles.signalDotNegative
-                : styles.signalDotNeutral,
-          ]}
-        />
-        <Text style={styles.signalLabel}>
-          {signal.tone === 'positive'
-            ? 'Good'
-            : signal.tone === 'negative'
-              ? 'Bad'
-              : 'Mixed'}
-        </Text>
-        <View style={styles.signalDivider} />
-        <Text style={styles.signalTrendIcon}>
-          {trendConfig[signal.trend].icon}
-        </Text>
-        <Text style={styles.signalTrendLabel}>{trendConfig[signal.trend].label} trend</Text>
-      </View>
-    );
-  };
   const bullets = section.bullets ?? [];
   const highlightRules = highlightMarket
     ? [
@@ -2492,6 +2496,7 @@ const GraphicSectionBody = ({
     <View style={styles.graphicSection}>
       <View style={styles.graphicSummaryCard}>
         <Text style={styles.graphicLabel}>Summary</Text>
+        {highlightMarket ? <SignalRow text={section.summary} /> : null}
         <Text style={styles.graphicSummaryText}>{section.summary}</Text>
       </View>
       {highlightMap.size ? (
@@ -2500,7 +2505,7 @@ const GraphicSectionBody = ({
             return (
               <View key={highlight.label} style={styles.highlightCard}>
                 <Text style={styles.highlightLabel}>{highlight.label}</Text>
-                {highlightMarket ? renderMarketSignal(highlight.value) : null}
+                {highlightMarket ? <SignalRow text={highlight.value} /> : null}
                 <Text style={styles.highlightValue}>{highlight.value}</Text>
               </View>
             );
@@ -2524,7 +2529,7 @@ const GraphicSectionBody = ({
                   </View>
                 ) : null}
                 <View style={styles.insightContent}>
-                  {highlightMarket ? renderMarketSignal(item) : null}
+                  {highlightMarket ? <SignalRow text={item} /> : null}
                   <Text style={styles.insightText}>{item}</Text>
                 </View>
               </View>
@@ -3085,6 +3090,80 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     lineHeight: 22,
+    flexShrink: 1,
+    flexWrap: 'wrap',
+  },
+  highlightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  highlightCard: {
+    backgroundColor: '#131c2c',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    minWidth: 180,
+    flexGrow: 1,
+  },
+  highlightLabel: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  highlightValue: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
+    flexShrink: 1,
+    flexWrap: 'wrap',
+  },
+  signalRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 6,
+  },
+  signalDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 999,
+  },
+  signalDotPositive: {
+    backgroundColor: '#37d67a',
+  },
+  signalDotNegative: {
+    backgroundColor: '#ff6b6b',
+  },
+  signalDotNeutral: {
+    backgroundColor: '#f6c343',
+  },
+  signalLabel: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  signalDivider: {
+    width: 1,
+    height: 12,
+    backgroundColor: colors.border,
+    marginHorizontal: 4,
+  },
+  signalTrendIcon: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  signalTrendLabel: {
+    color: colors.muted,
+    fontSize: 12,
   },
   highlightGrid: {
     flexDirection: 'row',
@@ -3193,6 +3272,8 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 14,
     lineHeight: 20,
+    flexShrink: 1,
+    flexWrap: 'wrap',
   },
   skillSummaryCard: {
     backgroundColor: '#121725',
