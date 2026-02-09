@@ -1821,7 +1821,7 @@ export default function App() {
       return (
         <Card title="Career Paths" subtitle="Traditional, alternate, and moonshot plans.">
           <CollapsibleCard title={report.aiForward.title} defaultCollapsed={false}>
-            <ReportSectionBody section={report.aiForward} />
+            <ReportSectionBody section={report.aiForward} showSignal />
           </CollapsibleCard>
           <CollapsibleCard title={report.careerInsights.title}>
             <ReportSectionBody section={report.careerInsights} showSignal />
@@ -3104,8 +3104,10 @@ const styles = StyleSheet.create({
     padding: 12,
     borderWidth: 1,
     borderColor: colors.accent,
-    minWidth: 180,
+    flexBasis: 180,
     flexGrow: 1,
+    minWidth: 0,
+    maxWidth: '100%',
   },
   highlightLabel: {
     color: colors.accentStrong,
@@ -3122,76 +3124,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     flexShrink: 1,
     flexWrap: 'wrap',
-  },
-  signalRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  signalDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  signalDotPositive: {
-    backgroundColor: '#37d67a',
-  },
-  signalDotNegative: {
-    backgroundColor: '#ff6b6b',
-  },
-  signalDotNeutral: {
-    backgroundColor: '#f6c343',
-  },
-  signalLabel: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  signalDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: colors.border,
-    marginHorizontal: 4,
-  },
-  signalTrendIcon: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  signalTrendLabel: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-  highlightGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  highlightCard: {
-    backgroundColor: '#131c2c',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    minWidth: 180,
-    flexGrow: 1,
-  },
-  highlightLabel: {
-    color: colors.accentStrong,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  highlightValue: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '600',
+    maxWidth: '100%',
   },
   signalRow: {
     flexDirection: 'row',
