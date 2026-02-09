@@ -296,6 +296,17 @@ export default function App() {
       skill.demandLevel.toLowerCase().includes('high')
     );
   }, [report.skillsPortfolio]);
+  const demandSectors = useMemo(() => {
+    const counts = new Map<string, number>();
+    highDemandSkills.forEach((skill) => {
+      const label = skill.category.replace(/-/g, ' ');
+      counts.set(label, (counts.get(label) || 0) + 1);
+    });
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 3)
+      .map(([label]) => label);
+  }, [highDemandSkills]);
   const resumeSkillSet = useMemo(
     () => new Set(resumeSkills.map((skill) => skill.name.toLowerCase())),
     [resumeSkills]
@@ -314,6 +325,35 @@ export default function App() {
       ),
     [highDemandSkills, resumeSkillSet]
   );
+  const marketScopes = useMemo(() => {
+    const scopes = [
+      {
+        key: 'international',
+        label: 'International',
+        enabled: profile.openToInternational,
+        subtitle: 'Global demand signals and cross-border opportunities.',
+      },
+      {
+        key: 'national',
+        label: 'National',
+        enabled: true,
+        subtitle: 'Country-wide trends and hiring momentum.',
+      },
+      {
+        key: 'regional',
+        label: 'Regional',
+        enabled: true,
+        subtitle: `Regional focus near ${mergedProfile.location || 'your area'}.`,
+      },
+      {
+        key: 'local',
+        label: 'Local',
+        enabled: true,
+        subtitle: `Local demand around ${mergedProfile.location || 'your city'}.`,
+      },
+    ];
+    return scopes.filter((scope) => scope.enabled);
+  }, [profile.openToInternational, mergedProfile.location]);
 
   const getRiskTone = (risk: string) => {
     const normalized = risk.toLowerCase();
@@ -1708,54 +1748,89 @@ export default function App() {
           title="Market Conditions"
           subtitle="AI market agent builds this from public sources and your location."
         >
-          <CollapsibleCard title="Demand fit & skill gaps" defaultCollapsed={false}>
-            <View style={styles.marketFitCard}>
-              <Text style={styles.marketFitLabel}>High-demand areas</Text>
-              {highDemandSkills.length ? (
-                <View style={styles.marketChipRow}>
-                  {highDemandSkills.slice(0, 8).map((skill) => (
-                    <View key={skill.name} style={styles.marketChip}>
-                      <Text style={styles.marketChipText}>{skill.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.helper}>
-                  Run AI analysis to surface in-demand skills for your role.
-                </Text>
-              )}
-              <Text style={styles.marketFitLabel}>Your fit in demand areas</Text>
-              {matchedDemandSkills.length ? (
-                <View style={styles.marketChipRow}>
-                  {matchedDemandSkills.slice(0, 8).map((skill) => (
-                    <View key={skill.name} style={styles.marketChipStrong}>
-                      <Text style={styles.marketChipText}>{skill.name}</Text>
-                    </View>
-                  ))}
-                </View>
-              ) : (
-                <Text style={styles.helper}>
-                  No direct matches found yet between your resume skills and top demand.
-                </Text>
-              )}
-              <View style={styles.marketGapBanner}>
-                <Text style={styles.marketGapTitle}>Skill gaps to close</Text>
-                {gapDemandSkills.length ? (
-                  <>
-                    <Text style={styles.marketGapText}>
-                      {gapDemandSkills.length} high-demand skills are missing from your
-                      current profile.
+          <CollapsibleCard title="Demand by scope & fit" defaultCollapsed={false}>
+            <View style={styles.marketScopeGrid}>
+              {marketScopes.map((scope) => (
+                <View key={scope.key} style={styles.marketScopeCard}>
+                  <Text style={styles.marketScopeTitle}>{scope.label}</Text>
+                  <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
+                  <Text style={styles.marketFitLabel}>High-demand sectors</Text>
+                  {demandSectors.length ? (
+                    <Text style={styles.marketScopeText}>
+                      {demandSectors.join(', ')}
                     </Text>
-                    <Text style={styles.marketGapText}>
-                      Focus next: {gapDemandSkills.slice(0, 3).map((skill) => skill.name).join(', ')}
+                  ) : (
+                    <Text style={styles.helper}>
+                      Run AI analysis to surface in-demand sectors for your role.
                     </Text>
-                  </>
-                ) : (
-                  <Text style={styles.marketGapText}>
-                    Your resume already covers the highlighted demand areas.
-                  </Text>
-                )}
-              </View>
+                  )}
+                  <Text style={styles.marketFitLabel}>High-demand skills</Text>
+                  {highDemandSkills.length ? (
+                    <View style={styles.marketChipRow}>
+                      {highDemandSkills.slice(0, 6).map((skill) => (
+                        <View key={`${scope.key}-${skill.name}`} style={styles.marketChip}>
+                          <Text style={styles.marketChipText}>{skill.name}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.helper}>
+                      Run AI analysis to surface in-demand skills for your role.
+                    </Text>
+                  )}
+                  <Text style={styles.marketFitLabel}>Your fit</Text>
+                  {matchedDemandSkills.length ? (
+                    <View style={styles.marketChipRow}>
+                      {matchedDemandSkills.slice(0, 6).map((skill) => (
+                        <View
+                          key={`${scope.key}-match-${skill.name}`}
+                          style={styles.marketChipStrong}
+                        >
+                          <Text style={styles.marketChipText}>{skill.name}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.helper}>
+                      No direct matches found yet between your resume skills and top demand.
+                    </Text>
+                  )}
+                  <View style={styles.marketGapBanner}>
+                    <Text style={styles.marketGapTitle}>Skill gaps to close</Text>
+                    {gapDemandSkills.length ? (
+                      <>
+                        <Text style={styles.marketGapText}>
+                          {gapDemandSkills.length} high-demand skills are missing from your
+                          current profile.
+                        </Text>
+                        <Text style={styles.marketGapText}>
+                          Focus next:{' '}
+                          {gapDemandSkills.slice(0, 3).map((skill) => skill.name).join(', ')}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.marketGapText}>
+                        Your resume already covers the highlighted demand areas.
+                      </Text>
+                    )}
+                  </View>
+                </View>
+              ))}
+            </View>
+          </CollapsibleCard>
+          <CollapsibleCard title="Explore demand opportunities">
+            <View style={styles.marketExploreCard}>
+              <Text style={styles.marketExploreText}>
+                Use the Skills Analysis page to explore how to build missing skills and
+                prioritize the sectors above. We’ll map learning resources, projects, and
+                milestones to close your gaps.
+              </Text>
+              <Pressable
+                style={styles.primaryButton}
+                onPress={() => setActiveCard('skills')}
+              >
+                <Text style={styles.primaryButtonText}>Explore skills plan</Text>
+              </Pressable>
             </View>
           </CollapsibleCard>
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
@@ -3182,6 +3257,31 @@ const styles = StyleSheet.create({
   marketFitCard: {
     gap: 12,
   },
+  marketScopeGrid: {
+    gap: 12,
+  },
+  marketScopeCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: 10,
+  },
+  marketScopeTitle: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+  },
+  marketScopeSubtitle: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  marketScopeText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
   marketFitLabel: {
     color: colors.accentStrong,
     fontSize: 12,
@@ -3234,6 +3334,14 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     lineHeight: 18,
+  },
+  marketExploreCard: {
+    gap: 12,
+  },
+  marketExploreText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
   },
   graphicSection: {
     gap: 12,
