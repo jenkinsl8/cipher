@@ -286,6 +286,18 @@ export default function App() {
   const marketSignal = hasAiReport
     ? report.marketSnapshot.summary || 'AI market snapshot ready'
     : 'Run AI analysis';
+  const topValuableSkills = useMemo(() => {
+    return [...report.skillsPortfolio]
+      .sort((a, b) => b.marketValueScore - a.marketValueScore)
+      .slice(0, 5);
+  }, [report.skillsPortfolio]);
+
+  const getRiskTone = (risk: string) => {
+    const normalized = risk.toLowerCase();
+    if (normalized.includes('very high') || normalized.includes('high')) return 'high';
+    if (normalized.includes('medium') || normalized.includes('moderate')) return 'medium';
+    return 'low';
+  };
 
   const navItems = [
     { id: 'home', label: 'Main', visible: true },
@@ -1561,37 +1573,6 @@ export default function App() {
             />
           </CollapsibleCard>
 
-          <CollapsibleCard title="Experience Signals">
-            <Field
-              label="Hobbies"
-              value={profile.hobbies}
-              onChangeText={(value) => updateProfile('hobbies', value)}
-              placeholder="Activities that show skills"
-              multiline
-            />
-            <Field
-              label="Volunteer work"
-              value={profile.volunteer}
-              onChangeText={(value) => updateProfile('volunteer', value)}
-              placeholder="Leadership or community work"
-              multiline
-            />
-            <Field
-              label="Side projects"
-              value={profile.sideProjects}
-              onChangeText={(value) => updateProfile('sideProjects', value)}
-              placeholder="Portfolio or side initiatives"
-              multiline
-            />
-            <Field
-              label="Additional notes"
-              value={profile.notes}
-              onChangeText={(value) => updateProfile('notes', value)}
-              placeholder="Anything else Cipher should know"
-              multiline
-            />
-          </CollapsibleCard>
-
           <CollapsibleCard title="Goals and Risk Profile">
             <Text style={styles.label}>Career goals</Text>
             <View style={styles.optionRow}>
@@ -1626,21 +1607,6 @@ export default function App() {
                 />
               ))}
             </View>
-          </CollapsibleCard>
-
-          <CollapsibleCard title="Extracted Skills">
-            {resumeSkills.length === 0 ? (
-              <Text style={styles.helper}>
-                No skills detected yet. Ensure your resume includes a Skills section.
-              </Text>
-            ) : (
-              resumeSkills.map((skill) => (
-                <View key={skill.id} style={styles.skillCard}>
-                  <Text style={styles.skillName}>{skill.name}</Text>
-                  <Text style={styles.skillMeta}>{skill.category}</Text>
-                </View>
-              ))
-            )}
           </CollapsibleCard>
 
           {renderChatSection({
@@ -1720,7 +1686,7 @@ export default function App() {
           subtitle="AI market agent builds this from public sources and your location."
         >
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
-            <ReportSectionView section={report.marketSnapshot} />
+            <GraphicSectionBody section={report.marketSnapshot} />
             {!hasAiReport ? (
               <Text style={styles.helper}>
                 Run AI analysis to generate market conditions and citations.
@@ -1728,14 +1694,14 @@ export default function App() {
             ) : null}
           </CollapsibleCard>
           <CollapsibleCard title={report.marketOutlook.title}>
-            <ReportSectionBody section={report.marketOutlook} />
+            <GraphicSectionBody section={report.marketOutlook} />
           </CollapsibleCard>
           <CollapsibleCard title={report.geographicOptions.title}>
-            <ReportSectionBody section={report.geographicOptions} />
+            <GraphicSectionBody section={report.geographicOptions} />
           </CollapsibleCard>
           {report.internationalPlan ? (
             <CollapsibleCard title={report.internationalPlan.title}>
-              <ReportSectionBody section={report.internationalPlan} />
+              <GraphicSectionBody section={report.internationalPlan} />
             </CollapsibleCard>
           ) : null}
 
@@ -1757,46 +1723,65 @@ export default function App() {
       return (
         <Card title="Skills Analysis" subtitle="Skill value, AI impact, and growth strategy.">
           <CollapsibleCard title={report.aiResilience.title} defaultCollapsed={false}>
-            <ReportSectionBody section={report.aiResilience} />
+            <GraphicSectionBody section={report.aiResilience} />
+          </CollapsibleCard>
+          <CollapsibleCard title="Top valuable skills" defaultCollapsed={false}>
+            {topValuableSkills.length ? (
+              topValuableSkills.map((skill) => (
+                <View key={skill.name} style={styles.skillHighlightCard}>
+                  <View style={styles.skillHighlightHeader}>
+                    <Text style={styles.skillName}>{skill.name}</Text>
+                    <Text style={styles.skillMeta}>{skill.category}</Text>
+                  </View>
+                  <View style={styles.skillHighlightRow}>
+                    <Text style={styles.skillHighlightLabel}>Market value</Text>
+                    <Text style={styles.skillHighlightValue}>
+                      {skill.marketValueScore}
+                    </Text>
+                  </View>
+                  <View style={styles.metricBar}>
+                    <View
+                      style={[
+                        styles.metricBarFill,
+                        {
+                          width: `${Math.min(100, skill.marketValueScore)}%`,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <View style={styles.skillTagRow}>
+                    <View style={styles.skillTag}>
+                      <Text style={styles.skillTagText}>
+                        Demand: {skill.demandLevel}
+                      </Text>
+                    </View>
+                    <View style={styles.skillTag}>
+                      <Text style={styles.skillTagText}>
+                        Scarcity: {skill.scarcity}
+                      </Text>
+                    </View>
+                    <View style={styles.skillTag}>
+                      <Text style={styles.skillTagText}>
+                        Premium: {skill.compensationPremium}
+                      </Text>
+                    </View>
+                  </View>
+                </View>
+              ))
+            ) : (
+              <Text style={styles.helper}>
+                Run AI analysis to generate the top valuable skills list.
+              </Text>
+            )}
           </CollapsibleCard>
           <CollapsibleCard title="Skills Portfolio" defaultCollapsed={false}>
             {report.skillsPortfolio.length ? (
               report.skillsPortfolio.map((skill) => (
-                <View key={skill.name} style={styles.reportCard}>
-                  <Text style={styles.reportTitle}>
-                    {skill.name} ({skill.category})
-                  </Text>
-                  <Text style={styles.reportMeta}>
-                    Market value score: {skill.marketValueScore} | Demand: {skill.demandLevel} |
-                    Scarcity: {skill.scarcity} | Premium: {skill.compensationPremium}
-                  </Text>
-                  <Text style={styles.reportMeta}>
-                    AI risk: {skill.aiRisk} ({skill.aiImpactTimeline})
-                  </Text>
-                  <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
-                  <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
-                  <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
-                  <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
-                  {skill.aiTools.length ? (
-                    <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
-                  ) : null}
-                  <Text style={styles.reportText}>
-                    Industry outlook (US): {skill.industryOutlook.industries.join(', ')}
-                  </Text>
-                  <Text style={styles.reportText}>
-                    Outlook notes: {skill.industryOutlook.notes}
-                  </Text>
-                  <Text style={styles.reportText}>
-                    Sources: {skill.industryOutlook.sources.join(', ')}
-                  </Text>
-                  <Text style={styles.reportText}>
-                    10-year value strategy: {skill.valueMaintenance.join(' ')}
-                  </Text>
-                  <Text style={styles.reportText}>
-                    Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
-                    {skill.projections.tenYear}
-                  </Text>
-                </View>
+                <SkillReportCard
+                  key={skill.name}
+                  skill={skill}
+                  riskTone={getRiskTone(skill.aiRisk)}
+                />
               ))
             ) : (
               <Text style={styles.helper}>
@@ -1805,16 +1790,16 @@ export default function App() {
             )}
           </CollapsibleCard>
           <CollapsibleCard title={report.skillsGapResources.title}>
-            <ReportSectionBody section={report.skillsGapResources} />
+            <GraphicSectionBody section={report.skillsGapResources} />
           </CollapsibleCard>
           <CollapsibleCard title={report.learningRoadmap.title}>
-            <ReportSectionBody section={report.learningRoadmap} />
+            <GraphicSectionBody section={report.learningRoadmap} />
           </CollapsibleCard>
           <CollapsibleCard title={report.competencyMilestones.title}>
-            <ReportSectionBody section={report.competencyMilestones} />
+            <GraphicSectionBody section={report.competencyMilestones} />
           </CollapsibleCard>
           <CollapsibleCard title={report.projectsToPursue.title}>
-            <ReportSectionBody section={report.projectsToPursue} />
+            <GraphicSectionBody section={report.projectsToPursue} />
           </CollapsibleCard>
 
           {renderChatSection({
@@ -2396,13 +2381,47 @@ const ReportSectionBody = ({
 }: {
   section: { title: string; summary: string; bullets?: string[] };
 }) => (
-  <View>
-    <Text style={styles.reportText}>{section.summary}</Text>
-    {section.bullets?.map((item) => (
-      <Text key={item} style={styles.reportBullet}>
-        - {item}
-      </Text>
-    ))}
+  <View style={styles.reportDigest}>
+    <Text style={styles.reportDigestLabel}>Key takeaway</Text>
+    <Text style={styles.reportDigestText} numberOfLines={3}>
+      {section.summary}
+    </Text>
+    {section.bullets?.length ? (
+      <View style={styles.reportChipRow}>
+        {section.bullets.map((item) => (
+          <View key={item} style={styles.reportChip}>
+            <Text style={styles.reportChipText} numberOfLines={2}>
+              {item}
+            </Text>
+          </View>
+        ))}
+      </View>
+    ) : null}
+  </View>
+);
+
+const GraphicSectionBody = ({
+  section,
+}: {
+  section: { title: string; summary: string; bullets?: string[] };
+}) => (
+  <View style={styles.graphicSection}>
+    <View style={styles.graphicSummaryCard}>
+      <Text style={styles.graphicLabel}>Summary</Text>
+      <Text style={styles.graphicSummaryText}>{section.summary}</Text>
+    </View>
+    {section.bullets?.length ? (
+      <View style={styles.insightList}>
+        {section.bullets.map((item, index) => (
+          <View key={item} style={styles.insightRow}>
+            <View style={styles.insightBadge}>
+              <Text style={styles.insightBadgeText}>{index + 1}</Text>
+            </View>
+            <Text style={styles.insightText}>{item}</Text>
+          </View>
+        ))}
+      </View>
+    ) : null}
   </View>
 );
 
@@ -2449,17 +2468,131 @@ const Chip = ({
   </Pressable>
 );
 
-const ReportSectionView = ({ section }: { section: { title: string; summary: string; bullets?: string[] } }) => (
+const ReportSectionView = ({
+  section,
+}: {
+  section: { title: string; summary: string; bullets?: string[] };
+}) => (
   <View style={styles.reportCard}>
     <Text style={styles.reportTitle}>{section.title}</Text>
-    <Text style={styles.reportText}>{section.summary}</Text>
-    {section.bullets?.map((item) => (
-      <Text key={item} style={styles.reportBullet}>
-        - {item}
-      </Text>
-    ))}
+    <ReportSectionBody section={section} />
   </View>
 );
+
+const SkillReportCard = ({
+  skill,
+  riskTone,
+}: {
+  skill: {
+    name: string;
+    category: string;
+    marketValueScore: number;
+    demandLevel: string;
+    scarcity: string;
+    compensationPremium: string;
+    aiRisk: string;
+    aiImpactTimeline: string;
+    aiCan: string;
+    aiCannot: string;
+    transformation: string;
+    humanEdge: string;
+    aiTools: string[];
+    industryOutlook: { industries: string[]; notes: string; sources: string[] };
+    valueMaintenance: string[];
+    projections: { threeYear: string; fiveYear: string; tenYear: string };
+  };
+  riskTone: 'low' | 'medium' | 'high';
+}) => {
+  const [expanded, setExpanded] = useState(false);
+
+  return (
+    <View style={styles.skillSummaryCard}>
+      <View style={styles.skillSummaryHeader}>
+        <Text style={styles.skillName}>{skill.name}</Text>
+        <Text style={styles.skillMeta}>{skill.category}</Text>
+      </View>
+      <View style={styles.skillMetricRow}>
+        <View style={styles.skillMetric}>
+          <Text style={styles.skillMetricLabel}>Market value</Text>
+          <Text style={styles.skillMetricValue}>{skill.marketValueScore}</Text>
+        </View>
+        <View style={styles.skillMetric}>
+          <Text style={styles.skillMetricLabel}>AI risk</Text>
+          <View
+            style={[
+              styles.riskBadge,
+              riskTone === 'high'
+                ? styles.riskBadgeHigh
+                : riskTone === 'medium'
+                ? styles.riskBadgeMedium
+                : styles.riskBadgeLow,
+            ]}
+          >
+            <Text style={styles.riskBadgeText}>{skill.aiRisk}</Text>
+          </View>
+        </View>
+      </View>
+      <View style={styles.metricBar}>
+        <View
+          style={[
+            styles.metricBarFill,
+            { width: `${Math.min(100, skill.marketValueScore)}%` },
+          ]}
+        />
+      </View>
+      <View style={styles.skillTagRow}>
+        <View style={styles.skillTag}>
+          <Text style={styles.skillTagText}>Demand: {skill.demandLevel}</Text>
+        </View>
+        <View style={styles.skillTag}>
+          <Text style={styles.skillTagText}>Scarcity: {skill.scarcity}</Text>
+        </View>
+        <View style={styles.skillTag}>
+          <Text style={styles.skillTagText}>
+            Premium: {skill.compensationPremium}
+          </Text>
+        </View>
+        <View style={styles.skillTag}>
+          <Text style={styles.skillTagText}>
+            Timeline: {skill.aiImpactTimeline}
+          </Text>
+        </View>
+      </View>
+      <Pressable style={styles.linkButton} onPress={() => setExpanded((prev) => !prev)}>
+        <Text style={styles.linkButtonText}>
+          {expanded ? 'Hide detail' : 'View detail'}
+        </Text>
+      </Pressable>
+      {expanded ? (
+        <View style={styles.skillDetail}>
+          <Text style={styles.reportText}>AI can: {skill.aiCan}</Text>
+          <Text style={styles.reportText}>AI cannot: {skill.aiCannot}</Text>
+          <Text style={styles.reportText}>Transformation: {skill.transformation}</Text>
+          <Text style={styles.reportText}>Human edge: {skill.humanEdge}</Text>
+          {skill.aiTools.length ? (
+            <Text style={styles.reportText}>Tools: {skill.aiTools.join(', ')}</Text>
+          ) : null}
+          <Text style={styles.reportText}>
+            Industry outlook (US): {skill.industryOutlook.industries.join(', ')}
+          </Text>
+          <Text style={styles.reportText}>
+            Outlook notes: {skill.industryOutlook.notes}
+          </Text>
+          <Text style={styles.reportText}>
+            Sources: {skill.industryOutlook.sources.join(', ')}
+          </Text>
+          <Text style={styles.reportText}>
+            10-year value strategy: {skill.valueMaintenance.join(' ')}
+          </Text>
+          <Text style={styles.reportText}>
+            Projections: {skill.projections.threeYear} | {skill.projections.fiveYear} |{' '}
+            {skill.projections.tenYear}
+          </Text>
+        </View>
+      ) : null}
+    </View>
+  );
+};
 
 const colors = {
   background: '#0f1117',
@@ -2653,14 +2786,6 @@ const styles = StyleSheet.create({
   missingText: {
     color: colors.danger,
   },
-  skillCard: {
-    backgroundColor: '#121725',
-    padding: 12,
-    borderRadius: 10,
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
   skillName: {
     color: colors.text,
     fontWeight: '600',
@@ -2793,6 +2918,221 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     borderWidth: 1,
     borderColor: colors.border,
+  },
+  reportDigest: {
+    gap: 8,
+  },
+  reportDigestLabel: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  reportDigestText: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  reportChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  reportChip: {
+    backgroundColor: '#0f1320',
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    maxWidth: '100%',
+  },
+  reportChipText: {
+    color: colors.text,
+    fontSize: 12,
+  },
+  graphicSection: {
+    gap: 12,
+  },
+  graphicSummaryCard: {
+    backgroundColor: '#0f1320',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  graphicLabel: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  graphicSummaryText: {
+    color: colors.text,
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  insightList: {
+    gap: 10,
+  },
+  insightRow: {
+    flexDirection: 'row',
+    gap: 10,
+    alignItems: 'flex-start',
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  insightBadge: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: colors.accent,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  insightBadgeText: {
+    color: '#fff',
+    fontWeight: '700',
+    fontSize: 12,
+  },
+  insightText: {
+    color: colors.text,
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  skillSummaryCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  skillSummaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
+  },
+  skillMetricRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+    marginBottom: 10,
+  },
+  skillMetric: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    minWidth: 140,
+    flexGrow: 1,
+  },
+  skillMetricLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  skillMetricValue: {
+    color: colors.text,
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 4,
+  },
+  riskBadge: {
+    alignSelf: 'flex-start',
+    borderRadius: 12,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    marginTop: 6,
+  },
+  riskBadgeHigh: {
+    backgroundColor: '#472027',
+  },
+  riskBadgeMedium: {
+    backgroundColor: '#3a2f1b',
+  },
+  riskBadgeLow: {
+    backgroundColor: '#1f3b2f',
+  },
+  riskBadgeText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  metricBar: {
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#0f1320',
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: 'hidden',
+    marginBottom: 10,
+  },
+  metricBarFill: {
+    height: '100%',
+    backgroundColor: colors.accentStrong,
+  },
+  skillTagRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 10,
+  },
+  skillTag: {
+    backgroundColor: '#0f1320',
+    borderRadius: 16,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  skillTagText: {
+    color: colors.text,
+    fontSize: 12,
+  },
+  skillDetail: {
+    marginTop: 8,
+    gap: 6,
+  },
+  skillHighlightCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  skillHighlightHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginBottom: 10,
+  },
+  skillHighlightRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 10,
+  },
+  skillHighlightLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  skillHighlightValue: {
+    color: colors.text,
+    fontSize: 18,
+    fontWeight: '700',
   },
   positionCard: {
     backgroundColor: '#0f1320',
