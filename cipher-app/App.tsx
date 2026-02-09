@@ -1686,7 +1686,7 @@ export default function App() {
           subtitle="AI market agent builds this from public sources and your location."
         >
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
-            <GraphicSectionBody section={report.marketSnapshot} />
+            <GraphicSectionBody section={report.marketSnapshot} highlightMarket />
             {!hasAiReport ? (
               <Text style={styles.helper}>
                 Run AI analysis to generate market conditions and citations.
@@ -1694,7 +1694,7 @@ export default function App() {
             ) : null}
           </CollapsibleCard>
           <CollapsibleCard title={report.marketOutlook.title}>
-            <GraphicSectionBody section={report.marketOutlook} />
+            <GraphicSectionBody section={report.marketOutlook} highlightMarket />
           </CollapsibleCard>
           <CollapsibleCard title={report.geographicOptions.title}>
             <GraphicSectionBody section={report.geographicOptions} />
@@ -2402,28 +2402,72 @@ const ReportSectionBody = ({
 
 const GraphicSectionBody = ({
   section,
+  highlightMarket = false,
 }: {
   section: { title: string; summary: string; bullets?: string[] };
-}) => (
-  <View style={styles.graphicSection}>
-    <View style={styles.graphicSummaryCard}>
-      <Text style={styles.graphicLabel}>Summary</Text>
-      <Text style={styles.graphicSummaryText}>{section.summary}</Text>
-    </View>
-    {section.bullets?.length ? (
-      <View style={styles.insightList}>
-        {section.bullets.map((item, index) => (
-          <View key={item} style={styles.insightRow}>
-            <View style={styles.insightBadge}>
-              <Text style={styles.insightBadgeText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.insightText}>{item}</Text>
-          </View>
-        ))}
+  highlightMarket?: boolean;
+}) => {
+  const bullets = section.bullets ?? [];
+  const highlightRules = highlightMarket
+    ? [
+        { key: 'salary', label: 'Salary range', matcher: /(salary|compensation|pay|\$)/i },
+        {
+          key: 'indicators',
+          label: 'Market indicators',
+          matcher: /(indicator|signal|demand|hiring|open roles)/i,
+        },
+        {
+          key: 'stats',
+          label: 'Key statistics',
+          matcher: /(stat|stats|%|percent|rate|growth|median|average|benchmark)/i,
+        },
+      ]
+    : [];
+  const highlightMap = new Map<string, { label: string; value: string }>();
+  const remainingBullets: string[] = [];
+
+  bullets.forEach((item) => {
+    const match = highlightRules.find(
+      (rule) => !highlightMap.has(rule.key) && rule.matcher.test(item)
+    );
+    if (match) {
+      highlightMap.set(match.key, { label: match.label, value: item });
+    } else {
+      remainingBullets.push(item);
+    }
+  });
+
+  return (
+    <View style={styles.graphicSection}>
+      <View style={styles.graphicSummaryCard}>
+        <Text style={styles.graphicLabel}>Summary</Text>
+        <Text style={styles.graphicSummaryText}>{section.summary}</Text>
       </View>
-    ) : null}
-  </View>
-);
+      {highlightMap.size ? (
+        <View style={styles.highlightGrid}>
+          {[...highlightMap.values()].map((highlight) => (
+            <View key={highlight.label} style={styles.highlightCard}>
+              <Text style={styles.highlightLabel}>{highlight.label}</Text>
+              <Text style={styles.highlightValue}>{highlight.value}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+      {remainingBullets.length ? (
+        <View style={styles.insightList}>
+          {remainingBullets.map((item, index) => (
+            <View key={item} style={styles.insightRow}>
+              <View style={styles.insightBadge}>
+                <Text style={styles.insightBadgeText}>{index + 1}</Text>
+              </View>
+              <Text style={styles.insightText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+};
 
 const CollapsibleCard = ({
   title,
@@ -2974,6 +3018,34 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     lineHeight: 22,
+  },
+  highlightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  highlightCard: {
+    backgroundColor: '#131c2c',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    minWidth: 180,
+    flexGrow: 1,
+  },
+  highlightLabel: {
+    color: colors.accentStrong,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  highlightValue: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '600',
   },
   insightList: {
     gap: 10,
