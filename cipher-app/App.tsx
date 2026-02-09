@@ -307,24 +307,47 @@ export default function App() {
       .slice(0, 3)
       .map(([label]) => label);
   }, [highDemandSkills]);
+  const normalizeSkillName = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9+/#\s.-]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
   const resumeSkillSet = useMemo(
-    () => new Set(resumeSkills.map((skill) => skill.name.toLowerCase())),
+    () => new Set(resumeSkills.map((skill) => normalizeSkillName(skill.name))),
     [resumeSkills]
   );
+  const resumeSkillMap = useMemo(() => {
+    const entries = resumeSkills.map((skill) => [
+      normalizeSkillName(skill.name),
+      skill,
+    ]);
+    return new Map(entries);
+  }, [resumeSkills]);
   const matchedDemandSkills = useMemo(
     () =>
       highDemandSkills.filter((skill) =>
-        resumeSkillSet.has(skill.name.toLowerCase())
+        resumeSkillSet.has(normalizeSkillName(skill.name))
       ),
     [highDemandSkills, resumeSkillSet]
   );
   const gapDemandSkills = useMemo(
     () =>
       highDemandSkills.filter(
-        (skill) => !resumeSkillSet.has(skill.name.toLowerCase())
+        (skill) => !resumeSkillSet.has(normalizeSkillName(skill.name))
       ),
     [highDemandSkills, resumeSkillSet]
   );
+  const matchedDemandDetails = useMemo(() => {
+    return matchedDemandSkills
+      .map((skill) => {
+        const resumeSkill = resumeSkillMap.get(normalizeSkillName(skill.name));
+        return resumeSkill
+          ? { name: skill.name, years: resumeSkill.years, evidence: resumeSkill.evidence }
+          : null;
+      })
+      .filter(Boolean) as Array<{ name: string; years: number; evidence: string }>;
+  }, [matchedDemandSkills, resumeSkillMap]);
   const marketScopes = useMemo(() => {
     const scopes = [
       {
@@ -1127,19 +1150,15 @@ export default function App() {
     setStatus('Coordinating agents...');
 
     try {
-      const { agentReplies, synthesis } = await runAgentOrchestration(
+      const orchestrationAgents =
+        forcedAgents && forcedAgents.length
+          ? agentCatalog.map((agent) => agent.id)
+          : forcedAgents || [];
+      const { synthesis } = await runAgentOrchestration(
         question.trim(),
-        forcedAgents || []
+        orchestrationAgents
       );
-      const replyMessages = agentReplies.map((reply) => ({
-        role: 'assistant' as const,
-        content: `${reply.agent.name}: ${reply.response}`,
-      }));
-      setThread([
-        ...nextThread,
-        ...replyMessages,
-        { role: 'assistant', content: `Cipher: ${synthesis}` },
-      ]);
+      setThread([...nextThread, { role: 'assistant', content: `Cipher: ${synthesis}` }]);
       setStatus('');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Agent chat failed. Try again.');
@@ -1816,6 +1835,48 @@ export default function App() {
                   </View>
                 </View>
               ))}
+            </View>
+          </CollapsibleCard>
+          <CollapsibleCard title="Ideal candidate sketch">
+            <View style={styles.marketCandidateCard}>
+              <Text style={styles.marketFitLabel}>Experience profile</Text>
+              <Text style={styles.marketCandidateText}>
+                {mergedProfile.yearsExperience
+                  ? `${mergedProfile.yearsExperience} years experience noted`
+                  : 'Years of experience not listed in resume.'}
+              </Text>
+              <Text style={styles.marketFitLabel}>Most desired work types</Text>
+              <Text style={styles.marketCandidateText}>
+                {demandSectors.length
+                  ? demandSectors.join(', ')
+                  : 'Run AI analysis to surface in-demand sectors.'}
+              </Text>
+              <Text style={styles.marketFitLabel}>Education & credentials</Text>
+              <Text style={styles.marketCandidateText}>
+                {mergedProfile.education || 'Education not listed in resume.'}
+              </Text>
+              <Text style={styles.marketCandidateText}>
+                {mergedProfile.certifications
+                  ? `Certifications: ${mergedProfile.certifications}`
+                  : 'Certifications not listed in resume.'}
+              </Text>
+              <Text style={styles.marketFitLabel}>High-demand skills with experience</Text>
+              {matchedDemandDetails.length ? (
+                <View style={styles.marketCandidateList}>
+                  {matchedDemandDetails.slice(0, 5).map((skill) => (
+                    <View key={skill.name} style={styles.marketCandidateRow}>
+                      <Text style={styles.marketCandidateStrong}>{skill.name}</Text>
+                      <Text style={styles.marketCandidateMeta}>
+                        {skill.years} yrs {skill.evidence ? `• ${skill.evidence}` : ''}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              ) : (
+                <Text style={styles.marketCandidateText}>
+                  No resume experience mapped to high-demand skills yet.
+                </Text>
+              )}
             </View>
           </CollapsibleCard>
           <CollapsibleCard title="Explore demand opportunities">
@@ -3342,6 +3403,33 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 14,
     lineHeight: 20,
+  },
+  marketCandidateCard: {
+    gap: 10,
+  },
+  marketCandidateText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  marketCandidateList: {
+    gap: 8,
+  },
+  marketCandidateRow: {
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  marketCandidateStrong: {
+    color: colors.text,
+    fontWeight: '700',
+    marginBottom: 4,
+  },
+  marketCandidateMeta: {
+    color: colors.muted,
+    fontSize: 12,
   },
   graphicSection: {
     gap: 12,
