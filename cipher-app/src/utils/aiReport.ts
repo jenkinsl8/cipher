@@ -352,6 +352,9 @@ const recommendationRules =
 const inferredSkillRules =
   'Infer likely skills from certifications, education, and described accomplishments even when a skill is not explicitly listed in parsed resume skills. Treat inferred skills as candidate strengths when supported by evidence, and review experience for proof of applied use before calling it a gap.';
 
+const skillsToMarketHandoffRules =
+  'Incorporate the skills agent handoff into market analysis. Use it to calibrate demand assumptions, explain competitive positioning, and refine geographic or international recommendations.';
+
 const competitivenessRules =
   'When assessing competitiveness, compare education credentials against practical experience depth. Evaluate how the market values each by referencing representative job descriptions for target roles, especially required/preferred education and desired years of experience, and explain tradeoffs clearly.';
 
@@ -562,26 +565,6 @@ export const parseCipherReportWithOpenAI = async ({
     });
   };
 
-  const marketPromise = callAgent<
-    Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>
-  >(
-      {
-        apiKey,
-        model,
-        baseUrl,
-        schemaName: 'market_agent',
-        schema: marketAgentSchema,
-        systemPrompt:
-          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n${competitivenessRules}\n` +
-          `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
-          `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
-        userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
-      }
-    ).then((data) => {
-      publishProgress('market', data);
-      return data;
-    });
-
   const skillsPromise = callAgent<
     Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>
   >(
@@ -602,6 +585,28 @@ export const parseCipherReportWithOpenAI = async ({
       publishProgress('skills', data);
       return data;
     });
+
+  const marketPromise = skillsPromise.then((skillsData) =>
+    callAgent<
+      Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>
+    >({
+      apiKey,
+      model,
+      baseUrl,
+      schemaName: 'market_agent',
+      schema: marketAgentSchema,
+      systemPrompt:
+        `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n${skillsToMarketHandoffRules}\n${competitivenessRules}\n` +
+        `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
+        `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
+      userPrompt:
+        `${contextBlock}\n\nSkills agent handoff from Aegis (source of truth for assessed strengths and gaps):\n` +
+        `${JSON.stringify(skillsData, null, 2)}\n\nRespond with JSON only.`,
+    }).then((data) => {
+      publishProgress('market', data);
+      return data;
+    })
+  );
 
   const careerPromise = callAgent<
     Pick<CipherReport, 'aiForward' | 'careerInsights' | 'careerPaths' | 'earningsMaximization' | 'opportunityMap' | 'actionPlan' | 'gapAnalysis' | 'demographicStrategy' | 'entrepreneurshipPlan'>
