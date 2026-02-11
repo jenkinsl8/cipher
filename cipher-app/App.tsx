@@ -1345,8 +1345,8 @@ export default function App() {
     try {
       const orchestrationAgents =
         forcedAgents && forcedAgents.length
-          ? agentCatalog.map((agent) => agent.id)
-          : forcedAgents || [];
+          ? forcedAgents
+          : [];
       const { synthesis } = await runAgentOrchestration(
         question.trim(),
         orchestrationAgents
@@ -1520,6 +1520,13 @@ export default function App() {
       )}
     </View>
   );
+
+  const latestMarketInsight = [...marketThread]
+    .reverse()
+    .find((message) => message.role === 'assistant')?.content;
+  const latestMarketInsightText = latestMarketInsight
+    ? latestMarketInsight.split(':').slice(1).join(':').trim() || latestMarketInsight
+    : '';
 
   const renderActiveCard = () => {
     if (activeCard === 'home') {
@@ -2089,6 +2096,11 @@ export default function App() {
               </Pressable>
             </View>
           </CollapsibleCard>
+          {latestMarketInsightText ? (
+            <CollapsibleCard title="Latest Sentinel market analysis" defaultCollapsed={false}>
+              <Text style={styles.chatText}>{latestMarketInsightText}</Text>
+            </CollapsibleCard>
+          ) : null}
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
             <GraphicSectionBody section={report.marketSnapshot} highlightMarket />
             {!hasAiReport ? (
