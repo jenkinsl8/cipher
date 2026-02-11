@@ -307,6 +307,20 @@ export default function App() {
       .slice(0, 3)
       .map(([label]) => label);
   }, [highDemandSkills]);
+  const demandIndustries = useMemo(() => {
+    const counts = new Map<string, number>();
+    highDemandSkills.forEach((skill) => {
+      skill.industryOutlook.industries.forEach((industry) => {
+        const label = industry.trim();
+        if (!label) return;
+        counts.set(label, (counts.get(label) || 0) + 1);
+      });
+    });
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([label]) => label);
+  }, [highDemandSkills]);
   const normalizeSkillName = (value: string) =>
     value
       .toLowerCase()
@@ -1850,6 +1864,20 @@ export default function App() {
                       Run AI analysis to surface in-demand sectors for your role.
                     </Text>
                   )}
+                  <Text style={styles.marketFitLabel}>🏢 In-demand industries ({mergedProfile.location || 'your location'})</Text>
+                  {demandIndustries.length ? (
+                    <View style={styles.marketChipRow}>
+                      {demandIndustries.slice(0, 5).map((industry) => (
+                        <View key={`${scope.key}-industry-${industry}`} style={styles.marketChip}>
+                          <Text style={styles.marketChipText}>{industry}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.helper}>
+                      Run AI analysis to identify in-demand industries for your location.
+                    </Text>
+                  )}
                   <Text style={styles.marketFitLabel}>🔥 High-demand skills</Text>
                   {highDemandSkills.length ? (
                     <View style={styles.marketChipRow}>
@@ -1900,7 +1928,7 @@ export default function App() {
                     <View style={styles.marketCandidateRow}>
                       <Text style={styles.marketCandidateStrong}>Work type</Text>
                       <Text style={styles.marketCandidateMeta}>
-                        {demandSectors[0] || 'Domain-specialized knowledge work'}
+                        {demandIndustries[0] || demandSectors[0] || 'Domain-specialized knowledge work'}
                       </Text>
                     </View>
                   </View>
