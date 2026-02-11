@@ -989,17 +989,32 @@ export default function App() {
   const buildAgentContext = () => {
     const trimmedResume = resumeText.trim();
     const truncatedResume =
-      trimmedResume.length > 4000
-        ? `${trimmedResume.slice(0, 4000)}\n...[truncated]`
+      trimmedResume.length > 6000
+        ? `${trimmedResume.slice(0, 6000)}
+...[truncated]`
         : trimmedResume;
-    const skillList = resumeSkills.length
-      ? resumeSkills.map((skill) => skill.name).join(', ')
-      : 'Not detected';
+    const parsedResumeProfile = {
+      currentRole: mergedProfile.currentRole || 'Unknown',
+      yearsExperience: mergedProfile.yearsExperience || 'Unknown',
+      education: mergedProfile.education || 'Unknown',
+      certifications: mergedProfile.certifications || 'Unknown',
+      location: mergedProfile.location || 'Unknown',
+      industries: mergedProfile.industries || 'Unknown',
+    };
+    const parsedResumeSkills = resumeSkills.map((skill) => ({
+      name: skill.name,
+      category: skill.category,
+      years: skill.years,
+      evidence: skill.evidence,
+    }));
+
     return [
-      `Profile: ${JSON.stringify(mergedProfile, null, 2)}`,
+      `Parsed resume profile: ${JSON.stringify(parsedResumeProfile, null, 2)}`,
+      `Profile (merged): ${JSON.stringify(mergedProfile, null, 2)}`,
       `Resume text: ${truncatedResume || 'Not available'}`,
-      `Skills: ${skillList}`,
+      `Parsed resume skills: ${JSON.stringify(parsedResumeSkills, null, 2)}`,
       `LinkedIn connections: ${connections.length}`,
+      'Instruction: Use the parsed resume profile and skills above as source-of-truth context for analysis and responses across all sections.',
     ].join('\n');
   };
 
