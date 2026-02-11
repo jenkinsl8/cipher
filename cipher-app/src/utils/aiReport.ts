@@ -349,6 +349,12 @@ labor market sources. Be conservative and realistic. If data is unknown, state a
 const recommendationRules =
   'Never recommend acquiring a skill that already appears in parsed resume skills. For existing skills, recommend deeper application, proof of impact, specialization, or adjacent upskilling instead.';
 
+const inferredSkillRules =
+  'Infer likely skills from certifications, education, and described accomplishments even when a skill is not explicitly listed in parsed resume skills. Treat inferred skills as candidate strengths when supported by evidence, and review experience for proof of applied use before calling it a gap.';
+
+const competitivenessRules =
+  'When assessing competitiveness, compare education credentials against practical experience depth. Evaluate how the market values each by referencing representative job descriptions for target roles, especially required/preferred education and desired years of experience, and explain tradeoffs clearly.';
+
 const callAgent = async <T>({
   apiKey,
   model,
@@ -538,7 +544,7 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'market_agent',
         schema: marketAgentSchema,
         systemPrompt:
-          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n` +
+          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n${competitivenessRules}\n` +
           `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
           `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
@@ -552,7 +558,7 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'skills_agent',
         schema: skillsAgentSchema,
         systemPrompt:
-          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n${recommendationRules}\n` +
+          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n` +
           `Return skillsPortfolio, aiResilience, competencyMilestones, skillsGapResources, ` +
           `learningRoadmap, and projectsToPursue. Use ids: ai-resilience, competency-milestones, ` +
           `skills-gap-resources, learning-roadmap, projects-to-pursue.`,
