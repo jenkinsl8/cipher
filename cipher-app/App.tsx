@@ -369,6 +369,13 @@ export default function App() {
     matchedDemandDetails.length === 0 && fitCandidateDetails.length > 0
       ? 'No exact demand-skill match was found, so this fit is inferred from your resume skills and experience.'
       : '';
+
+  const fitSynopsis = useMemo(() => {
+    const tone = fitCoveragePct >= 70 ? 'Strong' : fitCoveragePct >= 40 ? 'Developing' : 'Early';
+    const leadSkill = fitCandidateDetails[0]?.name || 'core role skills';
+    const topGap = gapDemandSkills[0]?.name || 'advanced specialization';
+    return `${tone} global fit: You align best through ${leadSkill}. To strengthen international competitiveness, prioritize ${topGap}.`;
+  }, [fitCoveragePct, fitCandidateDetails, gapDemandSkills]);
   const missingResumeSignals = useMemo(() => {
     const missing: string[] = [];
     if (!mergedProfile.currentRole?.trim()) missing.push('Current role');
@@ -1798,6 +1805,24 @@ export default function App() {
           subtitle="AI market agent builds this from public sources and your location."
         >
           <CollapsibleCard title="Demand by scope & fit" defaultCollapsed={false}>
+            <View style={styles.marketGlobalSynopsisCard}>
+              <View style={styles.marketSignalRow}>
+                <Text style={styles.marketSignalText}>🌍 Global fit synopsis</Text>
+                <Text style={styles.marketSignalText}>{fitCoveragePct}%</Text>
+              </View>
+              <View style={styles.metricBar}>
+                <View
+                  style={[
+                    styles.metricBarFill,
+                    { width: `${Math.min(100, fitCoveragePct)}%` },
+                  ]}
+                />
+              </View>
+              <Text style={styles.marketSynopsisText}>{fitSynopsis}</Text>
+              {fitInferenceNote ? (
+                <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
+              ) : null}
+            </View>
             <View style={styles.marketScopeGrid}>
               {marketScopes.map((scope) => (
                 <View key={scope.key} style={styles.marketScopeCard}>
@@ -1858,9 +1883,6 @@ export default function App() {
                       Add more skill details to improve fit analysis.
                     </Text>
                   )}
-                  {fitInferenceNote ? (
-                    <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
-                  ) : null}
                   <Text style={styles.marketFitLabel}>🧭 Ideal candidate sketch</Text>
                   <View style={styles.marketCandidateList}>
                     <View style={styles.marketCandidateRow}>
@@ -3351,6 +3373,19 @@ const styles = StyleSheet.create({
   },
   marketScopeGrid: {
     gap: 12,
+  },
+  marketGlobalSynopsisCard: {
+    backgroundColor: '#121725',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: colors.border,
+    marginBottom: 12,
+  },
+  marketSynopsisText: {
+    color: colors.text,
+    fontSize: 13,
+    lineHeight: 18,
   },
   marketScopeCard: {
     backgroundColor: '#121725',
