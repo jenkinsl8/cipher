@@ -317,6 +317,7 @@ const buildContextBlock = ({
     years: skill.years,
     evidence: skill.evidence,
   }));
+  const parsedResumeSkillNames = parsedResumeSkills.map((skill) => skill.name.toLowerCase());
 
   return `Parsed resume profile (source of truth):
 ${JSON.stringify(parsedResumeProfile, null, 2)}
@@ -330,10 +331,13 @@ ${resumeText}
 Parsed resume skills:
 ${JSON.stringify(parsedResumeSkills, null, 2)}
 
+Parsed resume skill names (quick reference):
+${JSON.stringify(parsedResumeSkillNames, null, 2)}
+
 LinkedIn connections sample:
 ${JSON.stringify(connections, null, 2)}
 
-Instruction: Use the parsed resume profile and parsed resume skills above for all analysis, including market conditions and follow-up recommendations.`;
+Instruction: Use the parsed resume profile and parsed resume skills above for all analysis, including market conditions and follow-up recommendations. Do not tell the user to acquire a skill that already appears in parsed resume skills.`;
 };
 
 const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD, ILO,
@@ -341,6 +345,9 @@ LinkedIn Workforce Reports, World Bank, IMF, government labor stats, reputable s
 Always cite sources with URLs in bullets when giving market, salary, or industry claims.
 For international outlooks, prioritize World Economic Forum, ILO, and other globally recognized
 labor market sources. Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
+
+const recommendationRules =
+  'Never recommend acquiring a skill that already appears in parsed resume skills. For existing skills, recommend deeper application, proof of impact, specialization, or adjacent upskilling instead.';
 
 const callAgent = async <T>({
   apiKey,
@@ -531,7 +538,7 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'market_agent',
         schema: marketAgentSchema,
         systemPrompt:
-          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n` +
+          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n` +
           `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
           `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
@@ -545,7 +552,7 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'skills_agent',
         schema: skillsAgentSchema,
         systemPrompt:
-          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n` +
+          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n${recommendationRules}\n` +
           `Return skillsPortfolio, aiResilience, competencyMilestones, skillsGapResources, ` +
           `learningRoadmap, and projectsToPursue. Use ids: ai-resilience, competency-milestones, ` +
           `skills-gap-resources, learning-roadmap, projects-to-pursue.`,
@@ -560,7 +567,7 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'career_agent',
         schema: careerAgentSchema,
         systemPrompt:
-          `You are Atlas, a career path strategist.\n${sourceRules}\n` +
+          `You are Atlas, a career path strategist.\n${sourceRules}\n${recommendationRules}\n` +
           `Return aiForward, careerInsights, careerPaths (Traditional/Alternate/Moonshot), ` +
           `earningsMaximization, opportunityMap, actionPlan, gapAnalysis, demographicStrategy, ` +
           `and entrepreneurshipPlan. Use ids: ai-forward, career-insights, earnings-maximization, ` +
