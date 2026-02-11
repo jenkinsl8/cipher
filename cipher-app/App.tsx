@@ -348,6 +348,27 @@ export default function App() {
       })
       .filter(Boolean) as Array<{ name: string; years: number; evidence: string }>;
   }, [matchedDemandSkills, resumeSkillMap]);
+  const inferredFitDetails = useMemo(() => {
+    return resumeSkills
+      .slice(0, 5)
+      .map((skill) => ({
+        name: skill.name,
+        years: skill.years,
+        evidence: skill.evidence,
+      }));
+  }, [resumeSkills]);
+  const fitCandidateDetails = matchedDemandDetails.length
+    ? matchedDemandDetails
+    : inferredFitDetails;
+  const fitCoveragePct = highDemandSkills.length
+    ? Math.round((matchedDemandSkills.length / highDemandSkills.length) * 100)
+    : fitCandidateDetails.length
+      ? 60
+      : 0;
+  const fitInferenceNote =
+    matchedDemandDetails.length === 0 && fitCandidateDetails.length > 0
+      ? 'No exact demand-skill match was found, so this fit is inferred from your resume skills and experience.'
+      : '';
   const missingResumeSignals = useMemo(() => {
     const missing: string[] = [];
     if (!mergedProfile.currentRole?.trim()) missing.push('Current role');
@@ -1780,9 +1801,21 @@ export default function App() {
             <View style={styles.marketScopeGrid}>
               {marketScopes.map((scope) => (
                 <View key={scope.key} style={styles.marketScopeCard}>
-                  <Text style={styles.marketScopeTitle}>{scope.label}</Text>
+                  <Text style={styles.marketScopeTitle}>🌐 {scope.label}</Text>
                   <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
-                  <Text style={styles.marketFitLabel}>High-demand sectors</Text>
+                  <View style={styles.marketSignalRow}>
+                    <Text style={styles.marketSignalText}>📈 Demand fit</Text>
+                    <Text style={styles.marketSignalText}>{fitCoveragePct}%</Text>
+                  </View>
+                  <View style={styles.metricBar}>
+                    <View
+                      style={[
+                        styles.metricBarFill,
+                        { width: `${Math.min(100, fitCoveragePct)}%` },
+                      ]}
+                    />
+                  </View>
+                  <Text style={styles.marketFitLabel}>🏭 High-demand sectors</Text>
                   {demandSectors.length ? (
                     <Text style={styles.marketScopeText}>
                       {demandSectors.join(', ')}
@@ -1792,7 +1825,7 @@ export default function App() {
                       Run AI analysis to surface in-demand sectors for your role.
                     </Text>
                   )}
-                  <Text style={styles.marketFitLabel}>High-demand skills</Text>
+                  <Text style={styles.marketFitLabel}>🔥 High-demand skills</Text>
                   {highDemandSkills.length ? (
                     <View style={styles.marketChipRow}>
                       {highDemandSkills.slice(0, 6).map((skill) => (
@@ -1806,25 +1839,51 @@ export default function App() {
                       Run AI analysis to surface in-demand skills for your role.
                     </Text>
                   )}
-                  <Text style={styles.marketFitLabel}>Your fit</Text>
-                  {matchedDemandSkills.length ? (
+                  <Text style={styles.marketFitLabel}>✅ Your fit highlights</Text>
+                  {fitCandidateDetails.length ? (
                     <View style={styles.marketChipRow}>
-                      {matchedDemandSkills.slice(0, 6).map((skill) => (
+                      {fitCandidateDetails.slice(0, 6).map((skill) => (
                         <View
                           key={`${scope.key}-match-${skill.name}`}
                           style={styles.marketChipStrong}
                         >
-                          <Text style={styles.marketChipText}>{skill.name}</Text>
+                          <Text style={styles.marketChipText}>
+                            {skill.name} {skill.years ? `(${skill.years}y)` : ''}
+                          </Text>
                         </View>
                       ))}
                     </View>
                   ) : (
                     <Text style={styles.helper}>
-                      No direct matches found yet between your resume skills and top demand.
+                      Add more skill details to improve fit analysis.
                     </Text>
                   )}
+                  {fitInferenceNote ? (
+                    <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
+                  ) : null}
+                  <Text style={styles.marketFitLabel}>🧭 Ideal candidate sketch</Text>
+                  <View style={styles.marketCandidateList}>
+                    <View style={styles.marketCandidateRow}>
+                      <Text style={styles.marketCandidateStrong}>Experience</Text>
+                      <Text style={styles.marketCandidateMeta}>
+                        {mergedProfile.yearsExperience || 'Estimated from resume context'} years
+                      </Text>
+                    </View>
+                    <View style={styles.marketCandidateRow}>
+                      <Text style={styles.marketCandidateStrong}>Education</Text>
+                      <Text style={styles.marketCandidateMeta}>
+                        {mergedProfile.education || 'Inferred: role-aligned degree or equivalent'}
+                      </Text>
+                    </View>
+                    <View style={styles.marketCandidateRow}>
+                      <Text style={styles.marketCandidateStrong}>Work type</Text>
+                      <Text style={styles.marketCandidateMeta}>
+                        {demandSectors[0] || 'Domain-specialized knowledge work'}
+                      </Text>
+                    </View>
+                  </View>
                   <View style={styles.marketGapBanner}>
-                    <Text style={styles.marketGapTitle}>Skill gaps to close</Text>
+                    <Text style={styles.marketGapTitle}>⚠️ Skill gaps to close</Text>
                     {gapDemandSkills.length ? (
                       <>
                         <Text style={styles.marketGapText}>
@@ -1838,65 +1897,14 @@ export default function App() {
                       </>
                     ) : (
                       <Text style={styles.marketGapText}>
-                        Your resume already covers the highlighted demand areas.
+                        Great coverage. Keep reinforcing the matched demand skills with recent project evidence.
                       </Text>
                     )}
                   </View>
-                </View>
-              ))}
-            </View>
-          </CollapsibleCard>
-          <CollapsibleCard title="Ideal candidate sketch">
-            <View style={styles.marketScopeGrid}>
-              {marketScopes.map((scope) => (
-                <View key={`candidate-${scope.key}`} style={styles.marketCandidateCard}>
-                  <Text style={styles.marketScopeTitle}>{scope.label}</Text>
-                  <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
-                  <Text style={styles.marketFitLabel}>Experience profile</Text>
-                  <Text style={styles.marketCandidateText}>
-                    {mergedProfile.yearsExperience
-                      ? `${mergedProfile.yearsExperience} years experience noted`
-                      : 'Years of experience not listed in resume.'}
-                  </Text>
-                  <Text style={styles.marketFitLabel}>Most desired work types</Text>
-                  <Text style={styles.marketCandidateText}>
-                    {demandSectors.length
-                      ? demandSectors.join(', ')
-                      : 'Run AI analysis to surface in-demand sectors.'}
-                  </Text>
-                  <Text style={styles.marketFitLabel}>Education & credentials</Text>
-                  <Text style={styles.marketCandidateText}>
-                    {mergedProfile.education || 'Education not listed in resume.'}
-                  </Text>
-                  <Text style={styles.marketCandidateText}>
-                    {mergedProfile.certifications
-                      ? `Certifications: ${mergedProfile.certifications}`
-                      : 'Certifications not listed in resume.'}
-                  </Text>
-                  <Text style={styles.marketFitLabel}>High-demand skills with experience</Text>
-                  {matchedDemandDetails.length ? (
-                    <View style={styles.marketCandidateList}>
-                      {matchedDemandDetails.slice(0, 5).map((skill) => (
-                        <View key={skill.name} style={styles.marketCandidateRow}>
-                          <Text style={styles.marketCandidateStrong}>{skill.name}</Text>
-                          <Text style={styles.marketCandidateMeta}>
-                            {skill.years} yrs {skill.evidence ? `• ${skill.evidence}` : ''}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.marketCandidateText}>
-                      No resume experience mapped to high-demand skills yet.
-                    </Text>
-                  )}
                   {missingResumeSignals.length ? (
-                    <View style={styles.marketGapBanner}>
-                      <Text style={styles.marketGapTitle}>Missing from resume</Text>
-                      <Text style={styles.marketGapText}>
-                        {missingResumeSignals.join(', ')}
-                      </Text>
-                    </View>
+                    <Text style={styles.marketInferenceText}>
+                      📝 Missing resume details: {missingResumeSignals.join(', ')}
+                    </Text>
                   ) : null}
                 </View>
               ))}
@@ -3398,6 +3406,22 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
     fontWeight: '600',
+  },
+  marketSignalRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 6,
+  },
+  marketSignalText: {
+    color: colors.text,
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  marketInferenceText: {
+    color: colors.muted,
+    fontSize: 12,
+    lineHeight: 17,
   },
   marketGapBanner: {
     backgroundColor: '#1a1f2e',
