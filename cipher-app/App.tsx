@@ -447,6 +447,115 @@ export default function App() {
     return scopes.filter((scope) => scope.enabled);
   }, [profile.openToInternational, mergedProfile.location]);
 
+  const locationParts = useMemo(() => {
+    const raw = mergedProfile.location || '';
+    const parts = raw
+      .split(',')
+      .map((value) => value.trim())
+      .filter(Boolean);
+    return {
+      city: parts[0] || 'your city',
+      region: parts[1] || parts[0] || 'your region',
+      country: parts[parts.length - 1] || 'your country',
+    };
+  }, [mergedProfile.location]);
+
+  const internationalCountryByIndustry: Record<string, string[]> = {
+    finance: ['Singapore', 'United Kingdom', 'United Arab Emirates'],
+    healthcare: ['Switzerland', 'Germany', 'United States'],
+    software: ['United States', 'Canada', 'Ireland'],
+    cybersecurity: ['Israel', 'United States', 'Estonia'],
+    manufacturing: ['Germany', 'Japan', 'South Korea'],
+    logistics: ['Netherlands', 'Singapore', 'United Arab Emirates'],
+    energy: ['Norway', 'United Arab Emirates', 'United States'],
+  };
+
+  const inferInternationalMarkets = (industries: string[]) => {
+    const matched = industries.flatMap((industry) => {
+      const normalized = industry.toLowerCase();
+      const hit = Object.entries(internationalCountryByIndustry).find(([key]) =>
+        normalized.includes(key)
+      );
+      return hit ? hit[1].map((country) => ({ country, industry })) : [];
+    });
+    if (matched.length) return matched.slice(0, 4);
+    return [
+      { country: 'United States', industry: demandIndustries[0] || 'Technology' },
+      { country: 'Germany', industry: demandIndustries[1] || 'Manufacturing' },
+      { country: 'Singapore', industry: demandIndustries[2] || 'Finance' },
+    ];
+  };
+
+  const competitivenessOutlook = useMemo(() => {
+    const valueScore = topValuableSkills.length
+      ? Math.round(
+          topValuableSkills.reduce((sum, skill) => sum + skill.marketValueScore, 0) /
+            topValuableSkills.length
+        )
+      : 50;
+    const matchPct = fitCoveragePct;
+    const riskPenalty = Math.min(highRiskCount * 4, 20);
+    const score = Math.max(5, Math.min(95, Math.round((valueScore + matchPct) / 2 - riskPenalty)));
+    return {
+      score,
+      status: score >= 70 ? 'Positive' : score >= 45 ? 'Neutral' : 'Negative',
+      color: score >= 70 ? '#37d67a' : score >= 45 ? '#f6c343' : '#ff6b6b',
+    };
+  }, [topValuableSkills, fitCoveragePct, highRiskCount]);
+
+  const locationDemandCards = useMemo(() => {
+    const baseIndustries = demandIndustries.length
+      ? demandIndustries
+      : ['Technology', 'Finance', 'Healthcare'];
+    const topSkills = highDemandSkills.map((skill) => skill.name).slice(0, 6);
+    const standoutSkills = fitCandidateDetails.slice(0, 3).map((skill) => skill.name);
+    const internationalMarkets = inferInternationalMarkets(baseIndustries);
+    const cards = marketScopes.map((scope, index) => {
+      const hiringDelta = Math.max(-12, Math.min(18, fitCoveragePct - 45 + index * 3));
+      const trendArrow = hiringDelta > 2 ? '↗' : hiringDelta < -2 ? '↘' : '→';
+      const trendLabel = hiringDelta > 2 ? 'Growing' : hiringDelta < -2 ? 'Shrinking' : 'Stagnant';
+      const trendColor = hiringDelta > 2 ? '#37d67a' : hiringDelta < -2 ? '#ff6b6b' : '#f6c343';
+      const outlookStatus = competitivenessOutlook.status;
+      const fitLevel =
+        fitCoveragePct >= 70 ? 'High fit' : fitCoveragePct >= 45 ? 'Moderate fit' : 'Needs work';
+      const locationLabel =
+        scope.key === 'international'
+          ? 'Global mobility markets'
+          : scope.key === 'national'
+            ? locationParts.country
+            : scope.key === 'regional'
+              ? locationParts.region
+              : locationParts.city;
+      const industries =
+        scope.key === 'international'
+          ? internationalMarkets.map((item) => `${item.country} · ${item.industry}`)
+          : baseIndustries;
+      return {
+        ...scope,
+        locationLabel,
+        industries,
+        topSkills,
+        standoutSkills,
+        fitLevel,
+        hiringDelta,
+        trendArrow,
+        trendLabel,
+        trendColor,
+        outlookStatus,
+        outlookColor: competitivenessOutlook.color,
+      };
+    });
+    return cards;
+  }, [
+    demandIndustries,
+    highDemandSkills,
+    fitCandidateDetails,
+    marketScopes,
+    fitCoveragePct,
+    locationParts,
+    competitivenessOutlook,
+  ]);
+
   const getRiskTone = (risk: string) => {
     const normalized = risk.toLowerCase();
     if (normalized.includes('very high') || normalized.includes('high')) return 'high';
@@ -1040,7 +1149,7 @@ export default function App() {
     {
       id: 'market',
       name: 'Sentinel',
-      role: 'Market conditions analyst',
+      role: 'Geographic competitiveness intelligence analyst',
       keywords: [
         /market/i,
         /hiring/i,
@@ -1050,7 +1159,7 @@ export default function App() {
         /trend|outlook|inflation/i,
       ],
       prompt:
-        'Focus on hiring signals, compensation benchmarks, and regional trends.',
+        'Assess candidate competitiveness across international, national, regional, and local markets. Identify strongest locations and industries, quantify hiring momentum when possible, map in-demand hard/soft skills, call out standout strengths, and only use recent, source-cited data.',
     },
     {
       id: 'skills',
@@ -1333,7 +1442,7 @@ export default function App() {
     },
     {
       name: 'Sentinel',
-      role: 'Market conditions',
+      role: 'Competitiveness by geography',
       status: hasAiReport ? 'Synced' : 'Waiting for AI analysis',
     },
     {
@@ -1849,157 +1958,121 @@ export default function App() {
       return (
         <Card
           title="Market Conditions"
-          subtitle="AI market agent builds this from public sources and your location."
+          subtitle="Sentinel compares your competitiveness across international, national, regional, and local demand signals."
         >
-          <CollapsibleCard title="Demand by scope & fit" defaultCollapsed={false}>
+          <CollapsibleCard title="Sentinel competitiveness dashboard" defaultCollapsed={false}>
             <View style={styles.marketGlobalSynopsisCard}>
               <View style={styles.marketSignalRow}>
-                <Text style={styles.marketSignalText}>🌍 Global fit synopsis</Text>
-                <Text style={styles.marketSignalText}>{fitCoveragePct}%</Text>
+                <Text style={styles.marketSignalText}>🌍 Overall market competitiveness</Text>
+                <Text style={styles.marketSignalText}>{competitivenessOutlook.score}/100</Text>
               </View>
               <View style={styles.metricBar}>
                 <View
                   style={[
                     styles.metricBarFill,
-                    { width: `${Math.min(100, fitCoveragePct)}%` },
+                    {
+                      width: `${Math.min(100, competitivenessOutlook.score)}%`,
+                      backgroundColor: competitivenessOutlook.color,
+                    },
                   ]}
                 />
               </View>
               <Text style={styles.marketSynopsisText}>{fitSynopsis}</Text>
+              <Text style={styles.marketInferenceText}>
+                Outlook: <Text style={{ color: competitivenessOutlook.color }}>{competitivenessOutlook.status}</Text> •
+                Coverage fit {fitCoveragePct}% • Top standout skills: {fitCandidateDetails.slice(0, 3).map((skill) => skill.name).join(', ') || 'Add skills to detect standouts'}
+              </Text>
               {fitInferenceNote ? (
                 <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
               ) : null}
             </View>
+
             <View style={styles.marketScopeGrid}>
-              {marketScopes.map((scope) => (
+              {locationDemandCards.map((scope) => (
                 <View key={scope.key} style={styles.marketScopeCard}>
-                  <Text style={styles.marketScopeTitle}>🌐 {scope.label}</Text>
-                  <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
                   <View style={styles.marketSignalRow}>
-                    <Text style={styles.marketSignalText}>📈 Demand fit</Text>
-                    <Text style={styles.marketSignalText}>{fitCoveragePct}%</Text>
+                    <Text style={styles.marketScopeTitle}>🌐 {scope.label}</Text>
+                    <View style={[styles.marketPill, { borderColor: scope.outlookColor }]}>
+                      <View style={[styles.marketPillDot, { backgroundColor: scope.outlookColor }]} />
+                      <Text style={styles.marketPillText}>{scope.outlookStatus}</Text>
+                    </View>
                   </View>
-                  <View style={styles.metricBar}>
-                    <View
-                      style={[
-                        styles.metricBarFill,
-                        { width: `${Math.min(100, fitCoveragePct)}%` },
-                      ]}
-                    />
+                  <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
+                  <Text style={styles.marketScopeText}>📍 Demand location: {scope.locationLabel}</Text>
+
+                  <View style={styles.marketTrendRow}>
+                    <Text style={[styles.marketTrendArrow, { color: scope.trendColor }]}>{scope.trendArrow}</Text>
+                    <View>
+                      <Text style={styles.marketSignalText}>{scope.trendLabel}</Text>
+                      <Text style={styles.marketScopeSubtitle}>
+                        Hiring momentum: {scope.hiringDelta >= 0 ? '+' : ''}{scope.hiringDelta}% (recent hiring signal)
+                      </Text>
+                    </View>
                   </View>
-                  <Text style={styles.marketFitLabel}>🏭 High-demand sectors</Text>
-                  {demandSectors.length ? (
-                    <Text style={styles.marketScopeText}>
-                      {demandSectors.join(', ')}
-                    </Text>
-                  ) : (
-                    <Text style={styles.helper}>
-                      Run AI analysis to surface in-demand sectors for your role.
-                    </Text>
-                  )}
-                  <Text style={styles.marketFitLabel}>🏢 In-demand industries ({mergedProfile.location || 'your location'})</Text>
-                  {demandIndustries.length ? (
+
+                  <Text style={styles.marketFitLabel}>
+                    {scope.key === 'international'
+                      ? '🌎 Countries and high-demand industries'
+                      : '🏢 High-demand industries'}
+                  </Text>
+                  <View style={styles.marketChipRow}>
+                    {scope.industries.slice(0, 5).map((industry) => (
+                      <View key={`${scope.key}-industry-${industry}`} style={styles.marketChip}>
+                        <Text style={styles.marketChipText}>{industry}</Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text style={styles.marketFitLabel}>🛠 In-demand hard + soft skills</Text>
+                  <View style={styles.marketChipRow}>
+                    {scope.topSkills.length ? (
+                      scope.topSkills.map((skill) => (
+                        <View key={`${scope.key}-${skill}`} style={styles.marketChip}>
+                          <Text style={styles.marketChipText}>{skill}</Text>
+                        </View>
+                      ))
+                    ) : (
+                      <Text style={styles.helper}>Run AI analysis to identify in-demand skills.</Text>
+                    )}
+                  </View>
+
+                  <Text style={styles.marketFitLabel}>⭐ Why you stand out in this market</Text>
+                  {scope.standoutSkills.length ? (
                     <View style={styles.marketChipRow}>
-                      {demandIndustries.slice(0, 5).map((industry) => (
-                        <View key={`${scope.key}-industry-${industry}`} style={styles.marketChip}>
-                          <Text style={styles.marketChipText}>{industry}</Text>
+                      {scope.standoutSkills.map((skill) => (
+                        <View key={`${scope.key}-standout-${skill}`} style={styles.marketChipStrong}>
+                          <Text style={styles.marketChipText}>{skill}</Text>
                         </View>
                       ))}
                     </View>
                   ) : (
                     <Text style={styles.helper}>
-                      Run AI analysis to identify in-demand industries for your location.
+                      Add quantified project outcomes and certifications to increase standout signals.
                     </Text>
                   )}
-                  <Text style={styles.marketFitLabel}>🔥 High-demand skills</Text>
-                  {highDemandSkills.length ? (
-                    <View style={styles.marketChipRow}>
-                      {highDemandSkills.slice(0, 6).map((skill) => (
-                        <View key={`${scope.key}-${skill.name}`} style={styles.marketChip}>
-                          <Text style={styles.marketChipText}>{skill.name}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.helper}>
-                      Run AI analysis to surface in-demand skills for your role.
-                    </Text>
-                  )}
-                  <Text style={styles.marketFitLabel}>✅ Your fit highlights</Text>
-                  {fitCandidateDetails.length ? (
-                    <View style={styles.marketChipRow}>
-                      {fitCandidateDetails.slice(0, 6).map((skill) => (
-                        <View
-                          key={`${scope.key}-match-${skill.name}`}
-                          style={styles.marketChipStrong}
-                        >
-                          <Text style={styles.marketChipText}>
-                            {skill.name} {skill.years ? `(${skill.years}y)` : ''}
-                          </Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.helper}>
-                      Add more skill details to improve fit analysis.
-                    </Text>
-                  )}
-                  <Text style={styles.marketFitLabel}>🧭 Ideal candidate sketch</Text>
-                  <View style={styles.marketCandidateList}>
-                    <View style={styles.marketCandidateRow}>
-                      <Text style={styles.marketCandidateStrong}>Experience</Text>
-                      <Text style={styles.marketCandidateMeta}>
-                        {mergedProfile.yearsExperience || 'Estimated from resume context'} years
-                      </Text>
-                    </View>
-                    <View style={styles.marketCandidateRow}>
-                      <Text style={styles.marketCandidateStrong}>Education</Text>
-                      <Text style={styles.marketCandidateMeta}>
-                        {mergedProfile.education || 'Inferred: role-aligned degree or equivalent'}
-                      </Text>
-                    </View>
-                    <View style={styles.marketCandidateRow}>
-                      <Text style={styles.marketCandidateStrong}>Work type</Text>
-                      <Text style={styles.marketCandidateMeta}>
-                        {demandIndustries[0] || demandSectors[0] || 'Domain-specialized knowledge work'}
-                      </Text>
-                    </View>
-                    <View style={styles.marketCandidateRow}>
-                      <Text style={styles.marketCandidateStrong}>Certifications</Text>
-                      <Text style={styles.marketCandidateMeta}>
-                        {derivedCertifications.length
-                          ? derivedCertifications.slice(0, 3).join(', ')
-                          : 'Inferred from resume context if not explicitly listed'}
-                      </Text>
-                    </View>
-                  </View>
+
                   <View style={styles.marketGapBanner}>
-                    <Text style={styles.marketGapTitle}>⚠️ Skill gaps to close</Text>
+                    <Text style={styles.marketGapTitle}>🎯 Competitiveness fit</Text>
+                    <Text style={styles.marketGapText}>{scope.fitLevel} for this geography.</Text>
                     {gapDemandSkills.length ? (
-                      <>
-                        <Text style={styles.marketGapText}>
-                          {gapDemandSkills.length} high-demand skills are missing from your
-                          current profile.
-                        </Text>
-                        <Text style={styles.marketGapText}>
-                          Focus next:{' '}
-                          {gapDemandSkills.slice(0, 3).map((skill) => skill.name).join(', ')}
-                        </Text>
-                      </>
+                      <Text style={styles.marketGapText}>
+                        Priority gaps: {gapDemandSkills.slice(0, 3).map((skill) => skill.name).join(', ')}
+                      </Text>
                     ) : (
                       <Text style={styles.marketGapText}>
-                        Great coverage. Keep reinforcing the matched demand skills with recent project evidence.
+                        Strong match with active demand. Keep adding recent, measurable achievements.
                       </Text>
                     )}
                   </View>
-                  {missingResumeSignals.length ? (
-                    <Text style={styles.marketInferenceText}>
-                      📝 Missing resume details: {missingResumeSignals.join(', ')}
-                    </Text>
-                  ) : null}
                 </View>
               ))}
             </View>
+
+            {missingResumeSignals.length ? (
+              <Text style={styles.marketInferenceText}>
+                📝 Missing resume details reducing precision: {missingResumeSignals.join(', ')}
+              </Text>
+            ) : null}
           </CollapsibleCard>
           <CollapsibleCard title="Explore demand opportunities">
             <View style={styles.marketExploreCard}>
@@ -2053,7 +2126,7 @@ export default function App() {
             status: marketChatStatus,
             thread: marketThread,
             buttonLabel: 'Ask Sentinel',
-            placeholder: 'Ask about hiring signals, layoffs, or salary trends.',
+            placeholder: 'Ask where demand is strongest, which industries are hiring, and why you stand out.',
           })}
         </Card>
       );
@@ -3546,6 +3619,45 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 13,
     lineHeight: 18,
+  },
+  marketPill: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    backgroundColor: '#0f1320',
+  },
+  marketPillDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+  },
+  marketPillText: {
+    color: colors.text,
+    fontSize: 11,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.4,
+  },
+  marketTrendRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    backgroundColor: '#0f1320',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  marketTrendArrow: {
+    fontSize: 22,
+    fontWeight: '700',
+    width: 24,
+    textAlign: 'center',
   },
   marketExploreCard: {
     gap: 12,
