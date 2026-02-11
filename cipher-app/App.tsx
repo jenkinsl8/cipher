@@ -66,6 +66,8 @@ const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
 const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
 const FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
+type AnalysisAgentId = 'market' | 'skills' | 'career' | 'ats' | 'network';
+
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
     const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
@@ -215,6 +217,7 @@ export default function App() {
   const [aiReportStatus, setAiReportStatus] = useState('');
   const [aiReportUpdatedAt, setAiReportUpdatedAt] = useState<number | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState(false);
+  const [analysisCompletedAgents, setAnalysisCompletedAgents] = useState<AnalysisAgentId[]>([]);
   const [lastAiReportKey, setLastAiReportKey] = useState('');
   const [agentQuestion, setAgentQuestion] = useState('');
   const [agentThread, setAgentThread] = useState<
@@ -371,9 +374,30 @@ export default function App() {
         evidence: skill.evidence,
       }));
   }, [resumeSkills]);
-  const fitCandidateDetails = matchedDemandDetails.length
-    ? matchedDemandDetails
-    : inferredFitDetails;
+  const parsedYearsExperience = Number.parseInt(
+    (mergedProfile.yearsExperience || '').match(/\d+/)?.[0] || '0',
+    10
+  );
+  const aegisHighDemandExperience = useMemo(() => {
+    const estimatedYears = Math.max(1, Math.min(8, parsedYearsExperience || 2));
+    return highDemandSkills.slice(0, 6).map((skill) => {
+      const resumeSkill = resumeSkillMap.get(normalizeSkillName(skill.name));
+      return {
+        name: skill.name,
+        years: resumeSkill?.years ?? estimatedYears,
+        evidence:
+          resumeSkill?.evidence ||
+          `Estimated from ${mergedProfile.yearsExperience || 'overall profile experience'} with Aegis high-demand ranking.`,
+        source: resumeSkill ? 'resume' : 'aegis-estimated',
+      };
+    });
+  }, [highDemandSkills, mergedProfile.yearsExperience, parsedYearsExperience, resumeSkillMap]);
+
+  const fitCandidateDetails = aegisHighDemandExperience.length
+    ? aegisHighDemandExperience
+    : matchedDemandDetails.length
+      ? matchedDemandDetails
+      : inferredFitDetails;
   const fitCoveragePct = highDemandSkills.length
     ? Math.round((matchedDemandSkills.length / highDemandSkills.length) * 100)
     : fitCandidateDetails.length
@@ -383,6 +407,9 @@ export default function App() {
     matchedDemandDetails.length === 0 && fitCandidateDetails.length > 0
       ? 'No exact demand-skill match was found, so this fit is inferred from your resume skills and experience.'
       : '';
+
+  const sentinelWaitingOnAegis =
+    aiReportLoading && !analysisCompletedAgents.includes('skills');
 
   const fitSynopsis = useMemo(() => {
     const tone = fitCoveragePct >= 70 ? 'Strong' : fitCoveragePct >= 40 ? 'Developing' : 'Early';
@@ -1088,6 +1115,7 @@ export default function App() {
 
     setAiReportStatus('Running AI analysis agents...');
     setAiReportLoading(true);
+    setAnalysisCompletedAgents([]);
     try {
       const analysis = await parseCipherReportWithOpenAI({
         apiKey: aiApiKey.trim(),
@@ -1097,11 +1125,16 @@ export default function App() {
         resumeText,
         skills: resumeSkills,
         connections,
-        onProgress: ({ completedAgents, totalAgents, report, done }) => {
+        onProgress: ({ agent, completedAgents, totalAgents, report, done }) => {
           setAiReport(report);
+          if (agent) {
+            setAnalysisCompletedAgents((prev) =>
+              prev.includes(agent) ? prev : [...prev, agent]
+            );
+          }
           if (done) {
             setAiReportStatus('AI analysis ready.');
-            return;
+                    return;
           }
           setAiReportStatus(
             `Running AI analysis agents... (${completedAgents}/${totalAgents} complete)`
@@ -1978,6 +2011,11 @@ export default function App() {
           subtitle="Sentinel compares your competitiveness across international, national, regional, and local demand signals."
         >
           <CollapsibleCard title="Sentinel competitiveness dashboard" defaultCollapsed={false}>
+            {sentinelWaitingOnAegis ? (
+              <View style={styles.marketWaitingBanner}>
+                <Text style={styles.marketWaitingText}>⏳ Sentinel is waiting on Aegis skills data to finalize competitiveness fit and regional demand alignment.</Text>
+              </View>
+            ) : null}
             <View style={styles.marketGlobalSynopsisCard}>
               <View style={styles.marketSignalRow}>
                 <Text style={styles.marketSignalText}>🌍 Overall market competitiveness</Text>
@@ -1998,6 +2036,12 @@ export default function App() {
               <Text style={styles.marketInferenceText}>
                 Outlook: <Text style={{ color: competitivenessOutlook.color }}>{competitivenessOutlook.status}</Text> •
                 Coverage fit {fitCoveragePct}% • Top standout skills: {fitCandidateDetails.slice(0, 3).map((skill) => skill.name).join(', ') || 'Add skills to detect standouts'}
+              </Text>
+              <Text style={styles.marketInferenceText}>
+                Aegis handoff (high-demand skills + experience): {fitCandidateDetails
+                  .slice(0, 3)
+                  .map((skill) => `${skill.name} (${skill.years}y)`)
+                  .join(', ') || 'Waiting for Aegis handoff'}
               </Text>
               {fitInferenceNote ? (
                 <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
@@ -3621,6 +3665,20 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 12,
     lineHeight: 17,
+  },
+  marketWaitingBanner: {
+    borderWidth: 1,
+    borderColor: '#f6c343',
+    backgroundColor: 'rgba(246, 195, 67, 0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+  },
+  marketWaitingText: {
+    color: '#ffd166',
+    fontSize: 13,
+    lineHeight: 18,
   },
   marketGapBanner: {
     backgroundColor: '#1a1f2e',
