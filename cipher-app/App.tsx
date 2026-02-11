@@ -393,18 +393,21 @@ export default function App() {
     });
   }, [highDemandSkills, mergedProfile.yearsExperience, parsedYearsExperience, resumeSkillMap]);
 
-  const fitCandidateDetails = aegisHighDemandExperience.length
+  const aegisHandoffDetails = aegisHighDemandExperience.length
     ? aegisHighDemandExperience
     : matchedDemandDetails.length
       ? matchedDemandDetails
       : inferredFitDetails;
+  const fitStandoutDetails = matchedDemandDetails.length
+    ? matchedDemandDetails
+    : inferredFitDetails;
   const fitCoveragePct = highDemandSkills.length
     ? Math.round((matchedDemandSkills.length / highDemandSkills.length) * 100)
-    : fitCandidateDetails.length
+    : fitStandoutDetails.length
       ? 60
       : 0;
   const fitInferenceNote =
-    matchedDemandDetails.length === 0 && fitCandidateDetails.length > 0
+    matchedDemandDetails.length === 0 && fitStandoutDetails.length > 0
       ? 'No exact demand-skill match was found, so this fit is inferred from your resume skills and experience.'
       : '';
 
@@ -413,10 +416,23 @@ export default function App() {
 
   const fitSynopsis = useMemo(() => {
     const tone = fitCoveragePct >= 70 ? 'Strong' : fitCoveragePct >= 40 ? 'Developing' : 'Early';
-    const leadSkill = fitCandidateDetails[0]?.name || 'core role skills';
-    const topGap = gapDemandSkills[0]?.name || 'advanced specialization';
+    const hasExactDemandMatch = matchedDemandDetails.length > 0;
+    const leadSkill =
+      (hasExactDemandMatch
+        ? matchedDemandDetails[0]?.name
+        : inferredFitDetails[0]?.name || fitStandoutDetails[0]?.name) ||
+      'core role skills';
+    const topGap =
+      gapDemandSkills.find((skill) => skill.name !== leadSkill)?.name ||
+      gapDemandSkills[0]?.name ||
+      'advanced specialization';
+
+    if (!hasExactDemandMatch) {
+      return `${tone} global fit: Your strongest signal is ${leadSkill}, based on inferred resume evidence. To strengthen international competitiveness, prioritize ${topGap}.`;
+    }
+
     return `${tone} global fit: You align best through ${leadSkill}. To strengthen international competitiveness, prioritize ${topGap}.`;
-  }, [fitCoveragePct, fitCandidateDetails, gapDemandSkills]);
+  }, [fitCoveragePct, fitStandoutDetails, gapDemandSkills, inferredFitDetails, matchedDemandDetails]);
   const derivedCertifications = useMemo(() => {
     const fromProfile = (mergedProfile.certifications || '')
       .split(/[,;\n•]/)
@@ -535,7 +551,7 @@ export default function App() {
       ? demandIndustries
       : ['Technology', 'Finance', 'Healthcare'];
     const topSkills = highDemandSkills.map((skill) => skill.name).slice(0, 6);
-    const standoutSkills = fitCandidateDetails.slice(0, 3).map((skill) => skill.name);
+    const standoutSkills = fitStandoutDetails.slice(0, 3).map((skill) => skill.name);
     const internationalMarkets = inferInternationalMarkets(baseIndustries);
     const cards = marketScopes.map((scope, index) => {
       const hiringDelta = Math.max(-12, Math.min(18, fitCoveragePct - 45 + index * 3));
@@ -576,7 +592,7 @@ export default function App() {
   }, [
     demandIndustries,
     highDemandSkills,
-    fitCandidateDetails,
+    fitStandoutDetails,
     marketScopes,
     fitCoveragePct,
     locationParts,
@@ -2035,10 +2051,10 @@ export default function App() {
               <Text style={styles.marketSynopsisText}>{fitSynopsis}</Text>
               <Text style={styles.marketInferenceText}>
                 Outlook: <Text style={{ color: competitivenessOutlook.color }}>{competitivenessOutlook.status}</Text> •
-                Coverage fit {fitCoveragePct}% • Top standout skills: {fitCandidateDetails.slice(0, 3).map((skill) => skill.name).join(', ') || 'Add skills to detect standouts'}
+                Coverage fit {fitCoveragePct}% • Top standout skills: {fitStandoutDetails.slice(0, 3).map((skill) => skill.name).join(', ') || 'Add skills to detect standouts'}
               </Text>
               <Text style={styles.marketInferenceText}>
-                Aegis handoff (high-demand skills + experience): {fitCandidateDetails
+                Aegis handoff (high-demand skills + experience): {aegisHandoffDetails
                   .slice(0, 3)
                   .map((skill) => `${skill.name} (${skill.years}y)`)
                   .join(', ') || 'Waiting for Aegis handoff'}
@@ -2046,6 +2062,9 @@ export default function App() {
               {fitInferenceNote ? (
                 <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
               ) : null}
+              <Text style={styles.marketInferenceText}>
+                🔗 How these work together: Sentinel computes competitiveness using market demand coverage, while Aegis handoff contributes your strongest high-demand skills and estimated experience context.
+              </Text>
             </View>
 
             <View style={styles.marketScopeGrid}>
