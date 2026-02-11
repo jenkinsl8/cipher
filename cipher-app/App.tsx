@@ -551,7 +551,7 @@ export default function App() {
       ? demandIndustries
       : ['Technology', 'Finance', 'Healthcare'];
     const topSkills = highDemandSkills.map((skill) => skill.name).slice(0, 6);
-    const standoutSkills = fitCandidateDetails.slice(0, 3).map((skill) => skill.name);
+    const standoutSkills = fitStandoutDetails.slice(0, 3).map((skill) => skill.name);
     const internationalMarkets = inferInternationalMarkets(baseIndustries);
     const cards = marketScopes.map((scope, index) => {
       const hiringDelta = Math.max(-12, Math.min(18, fitCoveragePct - 45 + index * 3));
@@ -592,7 +592,7 @@ export default function App() {
   }, [
     demandIndustries,
     highDemandSkills,
-    fitCandidateDetails,
+    fitStandoutDetails,
     marketScopes,
     fitCoveragePct,
     locationParts,
