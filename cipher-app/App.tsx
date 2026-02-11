@@ -413,10 +413,23 @@ export default function App() {
 
   const fitSynopsis = useMemo(() => {
     const tone = fitCoveragePct >= 70 ? 'Strong' : fitCoveragePct >= 40 ? 'Developing' : 'Early';
-    const leadSkill = fitCandidateDetails[0]?.name || 'core role skills';
-    const topGap = gapDemandSkills[0]?.name || 'advanced specialization';
+    const hasExactDemandMatch = matchedDemandDetails.length > 0;
+    const leadSkill =
+      (hasExactDemandMatch
+        ? matchedDemandDetails[0]?.name
+        : inferredFitDetails[0]?.name || fitCandidateDetails[0]?.name) ||
+      'core role skills';
+    const topGap =
+      gapDemandSkills.find((skill) => skill.name !== leadSkill)?.name ||
+      gapDemandSkills[0]?.name ||
+      'advanced specialization';
+
+    if (!hasExactDemandMatch) {
+      return `${tone} global fit: Your strongest signal is ${leadSkill}, based on inferred resume evidence. To strengthen international competitiveness, prioritize ${topGap}.`;
+    }
+
     return `${tone} global fit: You align best through ${leadSkill}. To strengthen international competitiveness, prioritize ${topGap}.`;
-  }, [fitCoveragePct, fitCandidateDetails, gapDemandSkills]);
+  }, [fitCoveragePct, fitCandidateDetails, gapDemandSkills, inferredFitDetails, matchedDemandDetails]);
   const derivedCertifications = useMemo(() => {
     const fromProfile = (mergedProfile.certifications || '')
       .split(/[,;\n•]/)
