@@ -353,7 +353,7 @@ const inferredSkillRules =
   'Infer likely skills from certifications, education, and described accomplishments even when a skill is not explicitly listed in parsed resume skills. Treat inferred skills as candidate strengths when supported by evidence, and review experience for proof of applied use before calling it a gap.';
 
 const skillsToMarketHandoffRules =
-  'Incorporate the skills agent handoff into market analysis. Use it to calibrate demand assumptions, explain competitive positioning, and refine geographic or international recommendations.';
+  'Incorporate the skills agent handoff into market analysis. Ask Aegis handoff data for the candidate\'s top skills and estimated experience levels in the highest-demand skill areas for each geography. Use it to calibrate demand assumptions, explain competitive positioning, and refine geographic or international recommendations.';
 
 const competitivenessRules =
   'When assessing competitiveness, compare education credentials against practical experience depth. Evaluate how the market values each by referencing representative job descriptions for target roles, especially required/preferred education and desired years of experience, and explain tradeoffs clearly.';
@@ -601,7 +601,8 @@ export const parseCipherReportWithOpenAI = async ({
         `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
       userPrompt:
         `${contextBlock}\n\nSkills agent handoff from Aegis (source of truth for assessed strengths and gaps):\n` +
-        `${JSON.stringify(skillsData, null, 2)}\n\nRespond with JSON only.`,
+        `${JSON.stringify(skillsData, null, 2)}\n\n` +
+        `Sentinel task: Ask the Aegis handoff for the candidate's top skills and level of experience in the high-demand areas for each geography. Reflect that handoff explicitly in marketSnapshot, geographicOptions, and marketOutlook.\n\nRespond with JSON only.`,
     }).then((data) => {
       publishProgress('market', data);
       return data;

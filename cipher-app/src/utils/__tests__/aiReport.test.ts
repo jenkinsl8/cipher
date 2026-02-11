@@ -139,6 +139,9 @@ describe('parseCipherReportWithOpenAI prompt directives', () => {
     expect(marketSystemPrompt).toContain('desired years of experience');
     expect(marketSystemPrompt).toContain('Incorporate the skills agent handoff into market analysis');
     expect(marketUserPrompt).toContain('Skills agent handoff from Aegis');
+    expect(marketUserPrompt).toContain(
+      "Sentinel task: Ask the Aegis handoff for the candidate's top skills and level of experience"
+    );
   });
 
 
