@@ -390,15 +390,33 @@ export default function App() {
     const topGap = gapDemandSkills[0]?.name || 'advanced specialization';
     return `${tone} global fit: You align best through ${leadSkill}. To strengthen international competitiveness, prioritize ${topGap}.`;
   }, [fitCoveragePct, fitCandidateDetails, gapDemandSkills]);
+  const derivedCertifications = useMemo(() => {
+    const fromProfile = (mergedProfile.certifications || '')
+      .split(/[,;\n•]/)
+      .map((value) => value.trim())
+      .filter(Boolean);
+    const fromResumeText = resumeText
+      .split(/\n+/)
+      .map((line) => line.trim())
+      .filter(
+        (line) =>
+          /certif|certificate|certified|license|licen[cs]e|pmp|cissp|itil|six sigma|aws|azure|google cloud/i.test(
+            line
+          )
+      )
+      .slice(0, 6);
+    return [...new Set([...fromProfile, ...fromResumeText])];
+  }, [mergedProfile.certifications, resumeText]);
+
   const missingResumeSignals = useMemo(() => {
     const missing: string[] = [];
     if (!mergedProfile.currentRole?.trim()) missing.push('Current role');
     if (!mergedProfile.yearsExperience?.trim()) missing.push('Years of experience');
     if (!mergedProfile.education?.trim()) missing.push('Education');
-    if (!mergedProfile.certifications?.trim()) missing.push('Certifications');
+    if (!derivedCertifications.length) missing.push('Certifications');
     if (resumeSkills.length === 0) missing.push('Skills list');
     return missing;
-  }, [mergedProfile, resumeSkills.length]);
+  }, [mergedProfile, resumeSkills.length, derivedCertifications.length]);
   const marketScopes = useMemo(() => {
     const scopes = [
       {
@@ -1944,6 +1962,14 @@ export default function App() {
                       <Text style={styles.marketCandidateStrong}>Work type</Text>
                       <Text style={styles.marketCandidateMeta}>
                         {demandIndustries[0] || demandSectors[0] || 'Domain-specialized knowledge work'}
+                      </Text>
+                    </View>
+                    <View style={styles.marketCandidateRow}>
+                      <Text style={styles.marketCandidateStrong}>Certifications</Text>
+                      <Text style={styles.marketCandidateMeta}>
+                        {derivedCertifications.length
+                          ? derivedCertifications.slice(0, 3).join(', ')
+                          : 'Inferred from resume context if not explicitly listed'}
                       </Text>
                     </View>
                   </View>
