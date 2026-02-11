@@ -322,10 +322,11 @@ ${JSON.stringify(
 LinkedIn connections sample:
 ${JSON.stringify(connections, null, 2)}`;
 
-const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD,
+const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD, ILO,
 LinkedIn Workforce Reports, World Bank, IMF, government labor stats, reputable salary surveys).
 Always cite sources with URLs in bullets when giving market, salary, or industry claims.
-Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
+For international outlooks, prioritize World Economic Forum, ILO, and other globally recognized
+labor market sources. Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
 
 const callAgent = async <T>({
   apiKey,
