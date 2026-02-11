@@ -123,4 +123,72 @@ describe('parseCipherReportWithOpenAI prompt directives', () => {
     expect(marketSystemPrompt).toContain('compare education credentials against practical experience depth');
     expect(marketSystemPrompt).toContain('desired years of experience');
   });
+
+
+  it('publishes incremental progress and a final completion update', async () => {
+    let invocation = 0;
+    global.fetch = jest.fn(async (_url: string | URL | Request, init?: RequestInit) => {
+      const payload = mockedResponses[invocation++];
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(payload) } }],
+        }),
+      } as Response;
+    });
+
+    const profile: UserProfile = {
+      name: 'Candidate',
+      currentRole: 'Data Analyst',
+      yearsExperience: '4',
+      education: 'B.S. Computer Science',
+      certifications: 'Machine Learning Specialization',
+      location: 'Remote',
+      willingToRelocate: false,
+      openToInternational: false,
+      age: '30',
+      gender: 'N/A',
+      raceEthnicity: 'N/A',
+      industries: 'Technology',
+      riskTolerance: 'Moderate',
+      aiLiteracy: 'Intermediate',
+      careerGoals: ['Growth'],
+      hobbies: '',
+      volunteer: '',
+      sideProjects: '',
+      notes: '',
+    };
+
+    const skills: SkillInput[] = [
+      {
+        id: '1',
+        name: 'Python',
+        category: 'technical',
+        years: 3,
+        evidence: 'Built analytics pipelines',
+        enjoyment: 4,
+      },
+    ];
+
+    const updates: Array<{ completedAgents: number; totalAgents: number; done: boolean }> = [];
+
+    await parseCipherReportWithOpenAI({
+      apiKey: 'test-key',
+      model: 'gpt-test',
+      profile,
+      resumeText: 'Sample resume text',
+      skills,
+      connections: [],
+      baseUrl: 'https://example.com',
+      onProgress: ({ completedAgents, totalAgents, done }) => {
+        updates.push({ completedAgents, totalAgents, done });
+      },
+    });
+
+    expect(updates.length).toBe(6);
+    expect(updates.slice(0, 5).every((step) => !step.done)).toBe(true);
+    expect(updates[5].done).toBe(true);
+    expect(updates[5].completedAgents).toBe(5);
+    expect(updates[5].totalAgents).toBe(5);
+  });
 });

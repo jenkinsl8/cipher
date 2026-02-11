@@ -515,6 +515,7 @@ export const parseCipherReportWithOpenAI = async ({
   resumeText,
   skills,
   connections,
+  onProgress,
 }: {
   apiKey: string;
   model: string;
@@ -523,6 +524,13 @@ export const parseCipherReportWithOpenAI = async ({
   resumeText: string;
   skills: SkillInput[];
   connections: LinkedInConnection[];
+  onProgress?: (payload: {
+    agent?: 'market' | 'skills' | 'career' | 'ats' | 'network';
+    completedAgents: number;
+    totalAgents: number;
+    report: CipherReport;
+    done: boolean;
+  }) => void;
 }): Promise<CipherReport> => {
   const trimmedResume = resumeText.trim();
   const truncatedResume =
@@ -535,8 +543,28 @@ export const parseCipherReportWithOpenAI = async ({
     connections: limitedConnections,
   });
 
-  const [marketData, skillsData, careerData, atsData, networkData] = await Promise.all([
-    callAgent<Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>>(
+  const totalAgents = 5;
+  const completedAgents = new Set<'market' | 'skills' | 'career' | 'ats' | 'network'>();
+  let partialReport: Partial<CipherReport> = {};
+  const publishProgress = (
+    agent: 'market' | 'skills' | 'career' | 'ats' | 'network',
+    payload: Partial<CipherReport>,
+    done = false
+  ) => {
+    partialReport = { ...partialReport, ...payload };
+    completedAgents.add(agent);
+    onProgress?.({
+      agent,
+      completedAgents: completedAgents.size,
+      totalAgents,
+      report: normalizeAiReport(partialReport),
+      done,
+    });
+  };
+
+  const marketPromise = callAgent<
+    Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>
+  >(
       {
         apiKey,
         model,
@@ -549,8 +577,14 @@ export const parseCipherReportWithOpenAI = async ({
           `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
       }
-    ),
-    callAgent<Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>>(
+    ).then((data) => {
+      publishProgress('market', data);
+      return data;
+    });
+
+  const skillsPromise = callAgent<
+    Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>
+  >(
       {
         apiKey,
         model,
@@ -564,8 +598,14 @@ export const parseCipherReportWithOpenAI = async ({
           `skills-gap-resources, learning-roadmap, projects-to-pursue.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
       }
-    ),
-    callAgent<Pick<CipherReport, 'aiForward' | 'careerInsights' | 'careerPaths' | 'earningsMaximization' | 'opportunityMap' | 'actionPlan' | 'gapAnalysis' | 'demographicStrategy' | 'entrepreneurshipPlan'>>(
+    ).then((data) => {
+      publishProgress('skills', data);
+      return data;
+    });
+
+  const careerPromise = callAgent<
+    Pick<CipherReport, 'aiForward' | 'careerInsights' | 'careerPaths' | 'earningsMaximization' | 'opportunityMap' | 'actionPlan' | 'gapAnalysis' | 'demographicStrategy' | 'entrepreneurshipPlan'>
+  >(
       {
         apiKey,
         model,
@@ -580,8 +620,12 @@ export const parseCipherReportWithOpenAI = async ({
           `opportunity-map, action-plan, gap-analysis, demographic-strategy, entrepreneurship-plan.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
       }
-    ),
-    callAgent<Pick<CipherReport, 'resumeAnalysis'>>({
+    ).then((data) => {
+      publishProgress('career', data);
+      return data;
+    });
+
+  const atsPromise = callAgent<Pick<CipherReport, 'resumeAnalysis'>>({
       apiKey,
       model,
       baseUrl,
@@ -590,8 +634,12 @@ export const parseCipherReportWithOpenAI = async ({
       systemPrompt:
         `You are an ATS analyst.\n${sourceRules}\nReturn resumeAnalysis (or null if no resume text).`,
       userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
-    }),
-    callAgent<Pick<CipherReport, 'networkReport'>>({
+    }).then((data) => {
+      publishProgress('ats', data);
+      return data;
+    });
+
+  const networkPromise = callAgent<Pick<CipherReport, 'networkReport'>>({
       apiKey,
       model,
       baseUrl,
@@ -601,14 +649,33 @@ export const parseCipherReportWithOpenAI = async ({
         `You are Nexus, a networking strategy analyst.\n${sourceRules}\n` +
         `Return networkReport or null if there are no connections.`,
       userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
-    }),
+    }).then((data) => {
+      publishProgress('network', data);
+      return data;
+    });
+
+  const [marketData, skillsData, careerData, atsData, networkData] = await Promise.all([
+    marketPromise,
+    skillsPromise,
+    careerPromise,
+    atsPromise,
+    networkPromise,
   ]);
 
-  return normalizeAiReport({
+  const finalReport = normalizeAiReport({
     ...marketData,
     ...skillsData,
     ...careerData,
     ...atsData,
     ...networkData,
   });
+
+  onProgress?.({
+    completedAgents: totalAgents,
+    totalAgents,
+    report: finalReport,
+    done: true,
+  });
+
+  return finalReport;
 };

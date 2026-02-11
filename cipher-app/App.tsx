@@ -1097,6 +1097,16 @@ export default function App() {
         resumeText,
         skills: resumeSkills,
         connections,
+        onProgress: ({ completedAgents, totalAgents, report, done }) => {
+          setAiReport(report);
+          if (done) {
+            setAiReportStatus('AI analysis ready.');
+            return;
+          }
+          setAiReportStatus(
+            `Running AI analysis agents... (${completedAgents}/${totalAgents} complete)`
+          );
+        },
       });
       setAiReport(analysis);
       setAiReportUpdatedAt(Date.now());
