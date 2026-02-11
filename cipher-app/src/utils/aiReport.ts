@@ -302,30 +302,45 @@ const buildContextBlock = ({
   resumeText: string;
   skills: SkillInput[];
   connections: LinkedInConnection[];
-}) => `User profile:
+}) => {
+  const parsedResumeProfile = {
+    currentRole: profile.currentRole || 'Unknown',
+    yearsExperience: profile.yearsExperience || 'Unknown',
+    education: profile.education || 'Unknown',
+    certifications: profile.certifications || 'Unknown',
+    location: profile.location || 'Unknown',
+    industries: profile.industries || 'Unknown',
+  };
+  const parsedResumeSkills = skills.map((skill) => ({
+    name: skill.name,
+    category: skill.category,
+    years: skill.years,
+    evidence: skill.evidence,
+  }));
+
+  return `Parsed resume profile (source of truth):
+${JSON.stringify(parsedResumeProfile, null, 2)}
+
+Full user profile:
 ${JSON.stringify(profile, null, 2)}
 
 Resume text (may be truncated):
 ${resumeText}
 
-Skills extracted:
-${JSON.stringify(
-  skills.map((skill) => ({
-    name: skill.name,
-    category: skill.category,
-    years: skill.years,
-  })),
-  null,
-  2
-)}
+Parsed resume skills:
+${JSON.stringify(parsedResumeSkills, null, 2)}
 
 LinkedIn connections sample:
-${JSON.stringify(connections, null, 2)}`;
+${JSON.stringify(connections, null, 2)}
 
-const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD,
+Instruction: Use the parsed resume profile and parsed resume skills above for all analysis, including market conditions and follow-up recommendations.`;
+};
+
+const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD, ILO,
 LinkedIn Workforce Reports, World Bank, IMF, government labor stats, reputable salary surveys).
 Always cite sources with URLs in bullets when giving market, salary, or industry claims.
-Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
+For international outlooks, prioritize World Economic Forum, ILO, and other globally recognized
+labor market sources. Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
 
 const callAgent = async <T>({
   apiKey,
