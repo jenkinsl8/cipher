@@ -1218,7 +1218,7 @@ export default function App() {
         /trend|outlook|inflation/i,
       ],
       prompt:
-        'Assess candidate competitiveness across international, national, regional, and local markets. Identify strongest locations and industries, quantify hiring momentum when possible, map in-demand hard/soft skills, call out standout strengths, and only use recent, source-cited data.',
+        'Assess candidate competitiveness across international, national, regional, and local markets. Use a structured market-analysis format that includes: Global Market Overview, Candidate Competitiveness (strengths + opportunities), In-Demand Skills, Regional Competitiveness, and a concise Conclusion. Identify strongest locations and industries, quantify hiring momentum when possible, map in-demand hard/soft skills, call out standout strengths, and use recent, source-cited data.',
     },
     {
       id: 'skills',
@@ -1251,7 +1251,7 @@ export default function App() {
   ];
 
   const sourceNote =
-    'Use public, reliable sources and cite URLs when referencing market, salary, or industry data.';
+    'Use public, reliable sources and cite URLs when referencing market, salary, or industry data. For Sentinel responses, prioritize a clear sectioned market brief with concrete metrics and competitiveness context.';
 
   const runChatAgent = async ({
     name,

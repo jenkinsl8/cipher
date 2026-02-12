@@ -358,6 +358,9 @@ const skillsToMarketHandoffRules =
 const competitivenessRules =
   'When assessing competitiveness, compare education credentials against practical experience depth. Evaluate how the market values each by referencing representative job descriptions for target roles, especially required/preferred education and desired years of experience, and explain tradeoffs clearly.';
 
+const sentinelFormatRules =
+  'Write market sections in a clear Sentinel-style narrative. Cover: (1) global market overview with major hiring drivers by industry, (2) candidate competitiveness with explicit strengths and opportunities, (3) in-demand skills mapped to parsed resume skills and inferred experience, (4) regional competitiveness across North America / Europe / APAC when relevant, and (5) a concise conclusion with next-step validation sources. Use concrete numbers when available and include source URLs in bullets.';
+
 const callAgent = async <T>({
   apiKey,
   model,
@@ -596,7 +599,7 @@ export const parseCipherReportWithOpenAI = async ({
       schemaName: 'market_agent',
       schema: marketAgentSchema,
       systemPrompt:
-        `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n${skillsToMarketHandoffRules}\n${competitivenessRules}\n` +
+        `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n${skillsToMarketHandoffRules}\n${competitivenessRules}\n${sentinelFormatRules}\n` +
         `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
         `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
       userPrompt:
