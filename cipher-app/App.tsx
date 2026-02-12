@@ -330,10 +330,49 @@ export default function App() {
       .replace(/[^a-z0-9+/#\s.-]/g, '')
       .replace(/\s+/g, ' ')
       .trim();
-  const resumeSkillSet = useMemo(
-    () => new Set(resumeSkills.map((skill) => normalizeSkillName(skill.name))),
-    [resumeSkills]
-  );
+  const getSkillAliases = (value: string) => {
+    const normalized = normalizeSkillName(value);
+    const aliases = new Set([normalized]);
+    const aliasMap: Record<string, string[]> = {
+      'ml': ['machine learning', 'machine-learning', 'machine learning engineering'],
+      'ai': ['artificial intelligence'],
+      'cloud architecture': ['cloud architect', 'cloud solution architecture', 'solution architecture'],
+      'solution architecture': ['solutions architecture', 'cloud architecture'],
+      'machine learning engineering': ['ml engineering', 'machine learning engineer', 'ml engineer'],
+      'devops': ['dev ops', 'platform engineering', 'site reliability engineering'],
+      'sre': ['site reliability engineering'],
+    };
+    Object.entries(aliasMap).forEach(([key, values]) => {
+      const normalizedKey = normalizeSkillName(key);
+      const normalizedValues = values.map((item) => normalizeSkillName(item));
+      if (normalized === normalizedKey || normalizedValues.includes(normalized)) {
+        aliases.add(normalizedKey);
+        normalizedValues.forEach((item) => aliases.add(item));
+      }
+    });
+    return aliases;
+  };
+  const skillsAreSimilar = (left: string, right: string) => {
+    const leftNormalized = normalizeSkillName(left);
+    const rightNormalized = normalizeSkillName(right);
+    if (!leftNormalized || !rightNormalized) return false;
+    if (leftNormalized === rightNormalized) return true;
+
+    const leftAliases = getSkillAliases(leftNormalized);
+    const rightAliases = getSkillAliases(rightNormalized);
+    for (const alias of leftAliases) {
+      if (rightAliases.has(alias)) return true;
+    }
+
+    if (leftNormalized.includes(rightNormalized) || rightNormalized.includes(leftNormalized)) {
+      return true;
+    }
+
+    const leftTokens = new Set(leftNormalized.split(/\s+/).filter((token) => token.length > 2));
+    const rightTokens = new Set(rightNormalized.split(/\s+/).filter((token) => token.length > 2));
+    const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+    return overlap > 0 && overlap / Math.max(leftTokens.size, rightTokens.size) >= 0.5;
+  };
   const resumeSkillMap = useMemo(() => {
     const entries = resumeSkills.map((skill) => [
       normalizeSkillName(skill.name),
@@ -344,27 +383,38 @@ export default function App() {
   const matchedDemandSkills = useMemo(
     () =>
       highDemandSkills.filter((skill) =>
-        resumeSkillSet.has(normalizeSkillName(skill.name))
+        resumeSkills.some((resumeSkill) => skillsAreSimilar(skill.name, resumeSkill.name))
       ),
-    [highDemandSkills, resumeSkillSet]
+    [highDemandSkills, resumeSkills]
   );
   const gapDemandSkills = useMemo(
     () =>
       highDemandSkills.filter(
-        (skill) => !resumeSkillSet.has(normalizeSkillName(skill.name))
+        (skill) => !resumeSkills.some((resumeSkill) => skillsAreSimilar(skill.name, resumeSkill.name))
       ),
-    [highDemandSkills, resumeSkillSet]
+    [highDemandSkills, resumeSkills]
   );
+  const demandToResumeMatchMap = useMemo(() => {
+    const entries = highDemandSkills.map((skill) => {
+      const match = resumeSkills.find((resumeSkill) =>
+        skillsAreSimilar(skill.name, resumeSkill.name)
+      );
+      return [normalizeSkillName(skill.name), match] as const;
+    });
+    return new Map(entries);
+  }, [highDemandSkills, resumeSkills]);
   const matchedDemandDetails = useMemo(() => {
     return matchedDemandSkills
       .map((skill) => {
-        const resumeSkill = resumeSkillMap.get(normalizeSkillName(skill.name));
+        const resumeSkill =
+          demandToResumeMatchMap.get(normalizeSkillName(skill.name)) ||
+          resumeSkillMap.get(normalizeSkillName(skill.name));
         return resumeSkill
           ? { name: skill.name, years: resumeSkill.years, evidence: resumeSkill.evidence }
           : null;
       })
       .filter(Boolean) as Array<{ name: string; years: number; evidence: string }>;
-  }, [matchedDemandSkills, resumeSkillMap]);
+  }, [demandToResumeMatchMap, matchedDemandSkills, resumeSkillMap]);
   const inferredFitDetails = useMemo(() => {
     return resumeSkills
       .slice(0, 5)
@@ -381,7 +431,9 @@ export default function App() {
   const aegisHighDemandExperience = useMemo(() => {
     const estimatedYears = Math.max(1, Math.min(8, parsedYearsExperience || 2));
     return highDemandSkills.slice(0, 6).map((skill) => {
-      const resumeSkill = resumeSkillMap.get(normalizeSkillName(skill.name));
+      const resumeSkill =
+        demandToResumeMatchMap.get(normalizeSkillName(skill.name)) ||
+        resumeSkillMap.get(normalizeSkillName(skill.name));
       return {
         name: skill.name,
         years: resumeSkill?.years ?? estimatedYears,
@@ -391,7 +443,13 @@ export default function App() {
         source: resumeSkill ? 'resume' : 'aegis-estimated',
       };
     });
-  }, [highDemandSkills, mergedProfile.yearsExperience, parsedYearsExperience, resumeSkillMap]);
+  }, [
+    demandToResumeMatchMap,
+    highDemandSkills,
+    mergedProfile.yearsExperience,
+    parsedYearsExperience,
+    resumeSkillMap,
+  ]);
 
   const aegisHandoffDetails = aegisHighDemandExperience.length
     ? aegisHighDemandExperience
