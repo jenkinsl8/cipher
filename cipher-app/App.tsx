@@ -3093,9 +3093,9 @@ const GraphicSectionBody = ({
                 ) : null}
                 {highlightText ? (
                   isMarketAction ? (
-                    <Pressable style={styles.highlightActionButton} accessibilityRole="button">
+                    <View style={styles.highlightActionButton}>
                       <Text style={styles.highlightActionButtonText}>{highlightText}</Text>
-                    </Pressable>
+                    </View>
                   ) : (
                     <Text style={styles.highlightValue}>{highlightText}</Text>
                   )
