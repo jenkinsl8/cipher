@@ -3078,6 +3078,8 @@ const GraphicSectionBody = ({
         <View style={styles.highlightGrid}>
           {[...highlightMap.values()].map((highlight) => {
             const isSalary = highlight.label === 'Salary range';
+            const isMarketAction =
+              highlight.label === 'Market indicators' || highlight.label === 'Market driver';
             const medianSalary = isSalary ? extractMedianSalary(highlight.value) : null;
             const highlightText = isSalary
               ? stripSalaryFromText(highlight.value)
@@ -3090,7 +3092,13 @@ const GraphicSectionBody = ({
                   <Text style={styles.highlightMedian}>Median salary: {medianSalary}</Text>
                 ) : null}
                 {highlightText ? (
-                  <Text style={styles.highlightValue}>{highlightText}</Text>
+                  isMarketAction ? (
+                    <Pressable style={styles.highlightActionButton} accessibilityRole="button">
+                      <Text style={styles.highlightActionButtonText}>{highlightText}</Text>
+                    </Pressable>
+                  ) : (
+                    <Text style={styles.highlightValue}>{highlightText}</Text>
+                  )
                 ) : null}
               </View>
             );
@@ -3908,6 +3916,20 @@ const styles = StyleSheet.create({
     flexShrink: 1,
     flexWrap: 'wrap',
     maxWidth: '100%',
+  },
+  highlightActionButton: {
+    backgroundColor: '#1a2840',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: colors.accent,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+  },
+  highlightActionButtonText: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
+    fontWeight: '700',
   },
   highlightMedian: {
     color: colors.text,
