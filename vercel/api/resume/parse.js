@@ -227,7 +227,7 @@ module.exports = async (req, res) => {
 
   const body = typeof req.body === 'string' ? parseJsonSafely(req.body) : req.body;
   const resumeText = body?.text?.trim();
-  const model = body?.model || process.env.OPENAI_MODEL || 'gpt-4o';
+  const model = body?.model || process.env.OPENAI_MODEL || 'gpt-5.2';
   const file = body?.file;
 
   const fileExtraction = await extractTextFromFile(file);

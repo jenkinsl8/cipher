@@ -57,7 +57,7 @@ OPENAI_API_KEY=sk-... npm test -- aiResumeParser.integration.test.ts
 1. Create a Vercel project with **Root Directory** set to `vercel/`.
 2. Add environment variables:
    - `OPENAI_API_KEY` (required)
-   - `OPENAI_MODEL` (optional, default: `gpt-4o`)
+   - `OPENAI_MODEL` (optional, default: `gpt-5.2`)
    - `OPENAI_BASE_URL` (optional, default: `https://api.openai.com`)
 3. Deploy.
 
