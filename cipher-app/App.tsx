@@ -202,7 +202,7 @@ export default function App() {
     data: string;
   } | null>(null);
   const [resumeUploadedAt, setResumeUploadedAt] = useState<number | null>(null);
-  const [aiModel, setAiModel] = useState('gpt-4o');
+  const [aiModel, setAiModel] = useState('gpt-5.2');
   const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com');
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiParserMode, setAiParserMode] = useState<'openai' | 'serverless'>(
@@ -818,7 +818,7 @@ export default function App() {
     try {
       const parsed = await parseLinkedInWithOpenAI({
         apiKey: aiApiKey.trim(),
-        model: aiModel.trim() || 'gpt-4o',
+        model: aiModel.trim() || 'gpt-5.2',
         baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
         file: linkedInFilePayload,
       });
@@ -1131,13 +1131,13 @@ export default function App() {
         aiParserMode === 'openai'
           ? await parseResumeWithOpenAI({
               apiKey: aiApiKey.trim(),
-              model: aiModel.trim() || 'gpt-4o',
+              model: aiModel.trim() || 'gpt-5.2',
               baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
               resumeText,
               file: resumeFilePayload || undefined,
             })
           : await parseResumeWithServerless({
-              model: aiModel.trim() || 'gpt-4o',
+              model: aiModel.trim() || 'gpt-5.2',
               baseUrl: aiBaseUrl.trim(),
               resumeText,
               file: resumeFilePayload || undefined,
@@ -1193,7 +1193,7 @@ export default function App() {
     try {
       const analysis = await parseCipherReportWithOpenAI({
         apiKey: aiApiKey.trim(),
-        model: aiModel.trim() || 'gpt-4o',
+        model: aiModel.trim() || 'gpt-5.2',
         baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
         profile: mergedProfile,
         resumeText,
@@ -1329,7 +1329,7 @@ export default function App() {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: aiModel.trim() || 'gpt-4o',
+        model: aiModel.trim() || 'gpt-5.2',
         temperature: 0.35,
         messages: [
           {
@@ -1871,7 +1871,7 @@ export default function App() {
               label="Model"
               value={aiModel}
               onChangeText={setAiModel}
-              placeholder="gpt-4o"
+              placeholder="gpt-5.2"
             />
             <Field
               label={aiParserMode === 'openai' ? 'OpenAI base URL' : 'AI parser URL'}

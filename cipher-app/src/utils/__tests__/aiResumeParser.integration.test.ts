@@ -59,7 +59,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
   it('parses a PDF attachment via OpenAI', async () => {
     const result = await parseResumeWithOpenAI({
       apiKey,
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       baseUrl: 'https://api.openai.com',
       resumeText: '',
       file: {
@@ -77,7 +77,7 @@ runOrSkip('OpenAI integration resume parsing', () => {
   it('parses a DOCX attachment via OpenAI', async () => {
     const result = await parseResumeWithOpenAI({
       apiKey,
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       baseUrl: 'https://api.openai.com',
       resumeText: 'Experience: Product Manager',
       file: {

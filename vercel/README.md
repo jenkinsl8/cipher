@@ -8,7 +8,7 @@ It uses `pdf-parse` for robust PDF extraction.
 1. Create a new Vercel project and set the **Root Directory** to `vercel/`.
 2. Add environment variables:
    - `OPENAI_API_KEY` (required)
-   - `OPENAI_MODEL` (optional, default: `gpt-4o`)
+   - `OPENAI_MODEL` (optional, default: `gpt-5.2`)
    - `OPENAI_BASE_URL` (optional, default: `https://api.openai.com`)
 3. Deploy.
 
@@ -23,7 +23,7 @@ https://<your-project>.vercel.app/api/resume/parse
 ```bash
 curl -i https://<your-project>.vercel.app/api/resume/parse \
   -H "Content-Type: application/json" \
-  -d '{"model":"gpt-4o","text":"Test resume text"}'
+  -d '{"model":"gpt-5.2","text":"Test resume text"}'
 ```
 
 ## App configuration

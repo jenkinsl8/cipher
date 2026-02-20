@@ -259,7 +259,7 @@ export default {
 
     const body = await request.json().catch(() => null);
     const resumeText = body?.text?.trim();
-    const model = body?.model || env.OPENAI_MODEL || 'gpt-4o';
+    const model = body?.model || env.OPENAI_MODEL || 'gpt-5.2';
     const file = body?.file;
     const fileExtraction = await extractTextFromFile(file);
     const warnings: string[] = [...fileExtraction.warnings];

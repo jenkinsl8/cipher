@@ -67,7 +67,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
 
     const result = await parseResumeWithOpenAI({
       apiKey: 'test-key',
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       baseUrl: 'https://api.openai.com',
       resumeText: '',
       file: {
@@ -115,7 +115,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
 
     const result = await parseResumeWithOpenAI({
       apiKey: 'test-key',
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       baseUrl: 'https://api.openai.com',
       resumeText: 'Experience: Program Manager',
       file: {
@@ -160,7 +160,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     const base64 = 'AAECAwQFBgcICQorLw==';
     await parseResumeWithOpenAI({
       apiKey: 'test-key',
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       baseUrl: 'https://api.openai.com',
       resumeText: '',
       file: {
@@ -207,7 +207,7 @@ describe('parseResumeWithOpenAI with file uploads', () => {
     const dataUri = 'data:application/pdf;base64,QUJD';
     await parseResumeWithOpenAI({
       apiKey: 'test-key',
-      model: 'gpt-4o',
+      model: 'gpt-5.2',
       baseUrl: 'https://api.openai.com',
       resumeText: '',
       file: {
