@@ -70,6 +70,28 @@ const FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 type AnalysisAgentId = 'market' | 'skills' | 'career' | 'ats' | 'network';
 type AnalysisScreenId = AnalysisAgentId;
 
+const toTopBreakdown = (values: string[], limit = 8) => {
+  const counts = new Map<string, number>();
+  values.forEach((rawValue) => {
+    const value = rawValue.trim();
+    if (!value) return;
+    counts.set(value, (counts.get(value) || 0) + 1);
+  });
+  return [...counts.entries()]
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, limit)
+    .map(([label, count]) => `${label} (${count})`);
+};
+
+const inferSeniority = (position: string) => {
+  const lower = position.toLowerCase();
+  if (/(chief|cxo|vp|vice president|head|director)/i.test(lower)) return 'Leadership';
+  if (/(manager|lead)/i.test(lower)) return 'Management';
+  if (/(senior|sr\.?)/i.test(lower)) return 'Senior IC';
+  if (/(intern|junior|jr\.?|associate)/i.test(lower)) return 'Entry/Junior';
+  return 'Mid-level IC';
+};
+
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
     const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
@@ -279,6 +301,43 @@ export default function App() {
 
   const resumeReady = !!resumeText.trim() || !!resumeFilePayload?.data;
   const linkedInReady = !!linkedInFilePayload?.data || connections.length > 0;
+  const networkReportForDisplay = useMemo(() => {
+    if (report.networkReport) return report.networkReport;
+    if (!analysisCompletedAgents.includes('network') || connections.length === 0) {
+      return null;
+    }
+
+    const recruiters = connections
+      .filter((connection) => /(recruiter|talent)/i.test(connection.position || ''))
+      .slice(0, 8)
+      .map((connection) =>
+        `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
+      );
+    const hiringManagers = connections
+      .filter((connection) => /(manager|director|head|vp|chief)/i.test(connection.position || ''))
+      .slice(0, 8)
+      .map((connection) =>
+        `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
+      );
+
+    return {
+      totalConnections: connections.length,
+      industryBreakdown: toTopBreakdown(connections.map((connection) => connection.position || '')),
+      seniorityBreakdown: toTopBreakdown(
+        connections.map((connection) => inferSeniority(connection.position || ''))
+      ),
+      companyBreakdown: toTopBreakdown(connections.map((connection) => connection.company || '')),
+      geographyBreakdown: toTopBreakdown(connections.map((connection) => connection.location || '')),
+      hiringManagers,
+      recruiters,
+      warmIntroductions: [],
+      priorityOrder: [],
+      outreachTemplates: [],
+      whatToAsk: [],
+      gaps: [],
+      actionPlan: [],
+    };
+  }, [analysisCompletedAgents, connections, report.networkReport]);
 
   const highRiskCount = report.skillsPortfolio.filter((skill) =>
     skill.aiRisk === 'High' || skill.aiRisk === 'Very High'
@@ -2728,79 +2787,79 @@ export default function App() {
               </Text>
             </View>
           ) : null}
-          {report.networkReport ? (
+          {networkReportForDisplay ? (
             <CollapsibleCard title="LinkedIn Network Analysis" defaultCollapsed={false}>
               <Text style={styles.reportText}>
-                Total connections: {report.networkReport.totalConnections}
+                Total connections: {networkReportForDisplay.totalConnections}
               </Text>
               <Text style={styles.reportSubheading}>Industry breakdown</Text>
-              {report.networkReport.industryBreakdown.map((item) => (
+              {networkReportForDisplay.industryBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Seniority breakdown</Text>
-              {report.networkReport.seniorityBreakdown.map((item) => (
+              {networkReportForDisplay.seniorityBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Company breakdown</Text>
-              {report.networkReport.companyBreakdown.map((item) => (
+              {networkReportForDisplay.companyBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Geography</Text>
-              {report.networkReport.geographyBreakdown.map((item) => (
+              {networkReportForDisplay.geographyBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Hiring managers</Text>
-              {report.networkReport.hiringManagers.map((item) => (
+              {networkReportForDisplay.hiringManagers.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Recruiters</Text>
-              {report.networkReport.recruiters.map((item) => (
+              {networkReportForDisplay.recruiters.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Warm introduction paths</Text>
-              {report.networkReport.warmIntroductions.map((item) => (
+              {networkReportForDisplay.warmIntroductions.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Priority order</Text>
-              {report.networkReport.priorityOrder.map((item) => (
+              {networkReportForDisplay.priorityOrder.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Outreach templates</Text>
-              {report.networkReport.outreachTemplates.map((item) => (
+              {networkReportForDisplay.outreachTemplates.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>What to ask for</Text>
-              {report.networkReport.whatToAsk.map((item) => (
+              {networkReportForDisplay.whatToAsk.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Network gaps</Text>
-              {report.networkReport.gaps.map((item) => (
+              {networkReportForDisplay.gaps.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Networking action plan</Text>
-              {report.networkReport.actionPlan.map((item) => (
+              {networkReportForDisplay.actionPlan.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
