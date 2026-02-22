@@ -4,6 +4,7 @@ import * as FileSystem from 'expo-file-system';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
 import {
+  ActivityIndicator,
   Platform,
   Pressable,
   SafeAreaView,
@@ -471,6 +472,8 @@ export default function App() {
 
   const sentinelWaitingOnAegis =
     aiReportLoading && !analysisCompletedAgents.includes('skills');
+  const nexusAnalysisInProgress =
+    aiReportLoading && !analysisCompletedAgents.includes('network');
 
   const fitSynopsis = useMemo(() => {
     const tone = fitCoveragePct >= 70 ? 'Strong' : fitCoveragePct >= 40 ? 'Developing' : 'Early';
@@ -2656,6 +2659,14 @@ export default function App() {
     if (activeCard === 'network') {
       return (
         <Card title="Network Analysis" subtitle="LinkedIn connections and outreach plan.">
+          {nexusAnalysisInProgress ? (
+            <View style={styles.analysisStatusBanner}>
+              <ActivityIndicator size="small" color="#22d3ee" />
+              <Text style={styles.analysisStatusText}>
+                Nexus network analysis is still in process...
+              </Text>
+            </View>
+          ) : null}
           {report.networkReport ? (
             <CollapsibleCard title="LinkedIn Network Analysis" defaultCollapsed={false}>
               <Text style={styles.reportText}>
@@ -2734,6 +2745,10 @@ export default function App() {
                 </Text>
               ))}
             </CollapsibleCard>
+          ) : analysisCompletedAgents.includes('network') ? (
+            <Text style={styles.helper}>
+              Nexus completed network analysis, but no network data is available yet.
+            </Text>
           ) : (
             <Text style={styles.helper}>
               Run AI analysis to generate network insights.
@@ -3772,6 +3787,23 @@ const styles = StyleSheet.create({
   },
   marketWaitingText: {
     color: '#ffd166',
+    fontSize: 13,
+    lineHeight: 18,
+  },
+  analysisStatusBanner: {
+    borderWidth: 1,
+    borderColor: '#22d3ee',
+    backgroundColor: 'rgba(34, 211, 238, 0.12)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  analysisStatusText: {
+    color: '#67e8f9',
     fontSize: 13,
     lineHeight: 18,
   },
