@@ -68,6 +68,7 @@ const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
 const FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 
 type AnalysisAgentId = 'market' | 'skills' | 'career' | 'ats' | 'network';
+type AnalysisScreenId = AnalysisAgentId;
 
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
@@ -667,24 +668,54 @@ export default function App() {
     return 'low';
   };
 
+  const analysisScreenDefinitions: Array<{ id: AnalysisScreenId; label: string; contentReady: boolean }> = [
+    { id: 'market', label: 'Market Conditions', contentReady: resumeReady },
+    { id: 'skills', label: 'Skills Analysis', contentReady: resumeReady },
+    { id: 'career', label: 'Career Paths', contentReady: resumeReady },
+    { id: 'ats', label: 'ATS Analysis', contentReady: resumeReady },
+    { id: 'network', label: 'Network Analysis', contentReady: linkedInReady },
+  ];
+  const analysisReadyByScreen = new Map(
+    analysisScreenDefinitions.map((screen) => {
+      const agentReady =
+        hasAiReport &&
+        !aiReportLoading &&
+        (analysisCompletedAgents.includes(screen.id) || aiReportStatus === 'AI analysis ready.');
+      return [
+        screen.id,
+        {
+          ...screen,
+          agentReady,
+          isReady: screen.contentReady && agentReady,
+        },
+      ];
+    })
+  );
+
   const navItems = [
-    { id: 'home', label: 'Main', visible: true },
-    { id: 'resume', label: 'Resume Upload', visible: true },
-    { id: 'linkedin', label: 'LinkedIn Upload', visible: true },
-    { id: 'market', label: 'Market Conditions', visible: resumeReady },
-    { id: 'skills', label: 'Skills Analysis', visible: resumeReady },
-    { id: 'career', label: 'Career Paths', visible: resumeReady },
-    { id: 'ats', label: 'ATS Analysis', visible: resumeReady },
-    { id: 'network', label: 'Network Analysis', visible: linkedInReady },
-    { id: 'agent-chat', label: 'Agent Console', visible: true },
+    { id: 'home', label: 'Main', visible: true, enabled: true },
+    { id: 'resume', label: 'Resume Upload', visible: true, enabled: true },
+    { id: 'linkedin', label: 'LinkedIn Upload', visible: true, enabled: true },
+    ...analysisScreenDefinitions.map((screen) => ({
+      id: screen.id,
+      label: screen.label,
+      visible: true,
+      enabled: analysisReadyByScreen.get(screen.id)?.isReady ?? false,
+      status: (analysisReadyByScreen.get(screen.id)?.isReady ? 'Ready' : 'Pending') as
+        | 'Ready'
+        | 'Pending',
+    })),
+    { id: 'agent-chat', label: 'Agent Console', visible: true, enabled: true },
   ];
 
   useEffect(() => {
-    const visibleIds = navItems.filter((item) => item.visible).map((item) => item.id);
-    if (!visibleIds.includes(activeCard)) {
+    const selectableIds = navItems
+      .filter((item) => item.visible && item.enabled)
+      .map((item) => item.id);
+    if (!selectableIds.includes(activeCard)) {
       setActiveCard('home');
     }
-  }, [activeCard, resumeReady, linkedInReady]);
+  }, [activeCard, navItems]);
 
   const formatExpiryDate = (uploadedAt: number) =>
     new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
@@ -1754,6 +1785,27 @@ export default function App() {
                   : 'Run AI analysis'
               }
             />
+          </View>
+
+          <Text style={styles.label}>Screen readiness</Text>
+          <View style={styles.dashboardGrid}>
+            {analysisScreenDefinitions.map((screen) => {
+              const readiness = analysisReadyByScreen.get(screen.id);
+              return (
+                <DashboardCard
+                  key={`screen-${screen.id}`}
+                  label={screen.label}
+                  value={readiness?.isReady ? 'Ready' : 'Pending'}
+                  meta={
+                    readiness?.contentReady
+                      ? readiness?.agentReady
+                        ? 'Content and agent analysis complete'
+                        : 'Waiting for AI agent analysis'
+                      : 'Waiting for content upload'
+                  }
+                />
+              );
+            })}
           </View>
 
           <Text style={styles.label}>KPI tiles</Text>
@@ -2843,7 +2895,7 @@ const NavRail = ({
   onSelect,
 }: {
   isCompact: boolean;
-  items: Array<{ id: string; label: string }>;
+  items: Array<{ id: string; label: string; enabled?: boolean; status?: 'Ready' | 'Pending' }>;
   activeId: string;
   onSelect: (sectionId: string) => void;
 }) => (
@@ -2854,18 +2906,28 @@ const NavRail = ({
         key={item.id}
         style={[
           styles.navButton,
+          item.enabled === false ? styles.navButtonDisabled : null,
           activeId === item.id ? styles.navButtonActive : null,
         ]}
-        onPress={() => onSelect(item.id)}
+        onPress={() => {
+          if (item.enabled === false) return;
+          onSelect(item.id);
+        }}
       >
         <Text
           style={[
             styles.navButtonText,
+            item.enabled === false ? styles.navButtonTextDisabled : null,
             activeId === item.id ? styles.navButtonTextActive : null,
           ]}
         >
           {item.label}
         </Text>
+        {item.status ? (
+          <Text style={item.status === 'Ready' ? styles.navStatusReady : styles.navStatusPending}>
+            {item.status}
+          </Text>
+        ) : null}
       </Pressable>
     ))}
   </View>
@@ -3386,6 +3448,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
+  navButtonDisabled: {
+    opacity: 0.6,
+  },
   navButtonActive: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
@@ -3394,8 +3459,23 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
   },
+  navButtonTextDisabled: {
+    color: colors.muted,
+  },
   navButtonTextActive: {
     color: '#fff',
+  },
+  navStatusReady: {
+    marginTop: 4,
+    color: '#7ae582',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  navStatusPending: {
+    marginTop: 4,
+    color: '#f6c343',
+    fontSize: 12,
+    fontWeight: '600',
   },
   container: {
     padding: 20,
