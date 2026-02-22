@@ -1,7 +1,6 @@
 import { LinkedInConnection } from '../types';
 
 type CsvParseResult = {
-  headers: string[];
   rows: string[][];
 };
 
@@ -59,12 +58,7 @@ export const parseCsv = (text: string): CsvParseResult => {
     pushRow();
   }
 
-  if (rows.length === 0) {
-    return { headers: [], rows: [] };
-  }
-
-  const headers = rows.shift() || [];
-  return { headers, rows };
+  return { rows };
 };
 
 export const parseLinkedInConnections = (csvText: string): LinkedInConnection[] => {
@@ -73,25 +67,52 @@ export const parseLinkedInConnections = (csvText: string): LinkedInConnection[] 
   }
 
   const parsed = parseCsv(csvText);
-  const headers = parsed.headers.map(normalizeHeader);
+  const expectedHeaderLabels = [
+    'First Name',
+    'Last Name',
+    'URL',
+    'Email Address',
+    'Company',
+    'Position',
+    'Connected On',
+    'Connection on',
+  ];
+  const expectedHeaders = new Set(expectedHeaderLabels.map(normalizeHeader));
 
-  const indexOf = (headerName: string) =>
-    headers.findIndex((header) => header === normalizeHeader(headerName));
+  const headerRowIndex = parsed.rows.slice(0, 5).findIndex((row) => {
+    const normalizedRow = row.map(normalizeHeader);
+    return (
+      normalizedRow.includes(normalizeHeader('First Name')) &&
+      normalizedRow.includes(normalizeHeader('Last Name')) &&
+      normalizedRow.some((cell) => expectedHeaders.has(cell))
+    );
+  });
+
+  if (headerRowIndex < 0) {
+    return [];
+  }
+
+  const headers = parsed.rows[headerRowIndex].map(normalizeHeader);
+
+  const indexOf = (...headerNames: string[]) =>
+    headers.findIndex((header) => headerNames.some((name) => header === normalizeHeader(name)));
 
   const firstNameIdx = indexOf('First Name');
   const lastNameIdx = indexOf('Last Name');
+  const urlIdx = indexOf('URL');
   const emailIdx = indexOf('Email Address');
   const companyIdx = indexOf('Company');
   const positionIdx = indexOf('Position');
-  const connectedOnIdx = indexOf('Connected On');
+  const connectedOnIdx = indexOf('Connected On', 'Connection on');
   const locationIdx = indexOf('Location');
 
   const getValue = (row: string[], index: number) =>
     index >= 0 && index < row.length ? row[index] : '';
 
-  return parsed.rows.map((row) => ({
+  return parsed.rows.slice(headerRowIndex + 1).map((row) => ({
     firstName: getValue(row, firstNameIdx),
     lastName: getValue(row, lastNameIdx),
+    url: getValue(row, urlIdx),
     email: getValue(row, emailIdx),
     company: getValue(row, companyIdx),
     position: getValue(row, positionIdx),

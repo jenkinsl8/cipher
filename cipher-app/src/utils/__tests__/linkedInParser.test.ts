@@ -43,9 +43,9 @@ describe('parseLinkedInWithOpenAI', () => {
 
     const rows = Array.from({ length: 970 }, (_, i) => {
       const index = i + 1;
-      return `First${index},Last${index},,Company${index},,1/1/2024,`;
+      return `First${index},Last${index},https://linkedin.com/in/user${index},,Company${index},,1/1/2024,`;
     }).join('\n');
-    const csv = `First Name,Last Name,Email Address,Company,Position,Connected On,Location\n${rows}`;
+    const csv = `First Name,Last Name,URL,Email Address,Company,Position,Connection on,Location\n${rows}`;
     const base64 = Buffer.from(csv, 'utf8').toString('base64');
 
     const result = await parseLinkedInWithOpenAI({
@@ -63,6 +63,7 @@ describe('parseLinkedInWithOpenAI', () => {
     expect(result.connections?.[0]).toMatchObject({
       firstName: 'First1',
       lastName: 'Last1',
+      url: 'https://linkedin.com/in/user1',
       email: '',
       company: 'Company1',
       position: '',
@@ -71,6 +72,7 @@ describe('parseLinkedInWithOpenAI', () => {
     expect(result.connections?.[969]).toMatchObject({
       firstName: 'First970',
       lastName: 'Last970',
+      url: 'https://linkedin.com/in/user970',
       email: '',
       company: 'Company970',
       position: '',

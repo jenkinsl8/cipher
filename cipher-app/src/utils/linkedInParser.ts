@@ -96,6 +96,7 @@ export const parseLinkedInWithOpenAI = async ({
     {
       "firstName": "",
       "lastName": "",
+      "url": "",
       "email": "",
       "company": "",
       "position": "",
