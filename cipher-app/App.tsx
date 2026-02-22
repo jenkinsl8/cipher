@@ -690,7 +690,15 @@ export default function App() {
   const buildReportKey = () => {
     const baseText = resumeText.trim() || resumeFilePayload?.name || '';
     const stamp = resumeUploadedAt ? String(resumeUploadedAt) : '';
-    return `${baseText.slice(0, 200)}|${stamp}|${resumeSkills.length}`;
+    const linkedInStamp = linkedInUploadedAt ? String(linkedInUploadedAt) : '';
+    const linkedInSample = connections
+      .slice(0, 5)
+      .map((connection) =>
+        [connection.firstName, connection.lastName, connection.company, connection.connectedOn]
+          .join(':')
+      )
+      .join('|');
+    return `${baseText.slice(0, 200)}|${stamp}|${resumeSkills.length}|${connections.length}|${linkedInStamp}|${linkedInSample}`;
   };
 
   const missingFields = useMemo(() => {
@@ -1076,6 +1084,7 @@ export default function App() {
   }, [
     resumeText,
     resumeSkills,
+    connections,
     aiApiKey,
     aiBaseUrl,
     aiModel,
@@ -1084,6 +1093,7 @@ export default function App() {
     lastAiReportKey,
     resumeFilePayload,
     resumeUploadedAt,
+    linkedInUploadedAt,
   ]);
 
   const handleAiResumeParse = async (isAuto = false) => {
