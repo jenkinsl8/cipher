@@ -136,10 +136,16 @@ export type CareerPathTier = {
 
 export type NetworkReport = {
   totalConnections: number;
+  titleBreakdown: string[];
   industryBreakdown: string[];
+  connectionTypeBreakdown: string[];
   seniorityBreakdown: string[];
   companyBreakdown: string[];
   geographyBreakdown: string[];
+  careerPathAlignment: string[];
+  bestConfigurationInsights: string[];
+  roleMatches: string[];
+  connectionUtilityStrategy: string[];
   hiringManagers: string[];
   recruiters: string[];
   warmIntroductions: string[];
