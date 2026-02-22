@@ -1295,6 +1295,14 @@ export default function App() {
       years: skill.years,
       evidence: skill.evidence,
     }));
+    const linkedInConnectionSample = connections.slice(0, 40).map((connection) => ({
+      firstName: connection.firstName,
+      lastName: connection.lastName,
+      company: connection.company,
+      position: connection.position,
+      connectedOn: connection.connectedOn,
+      location: connection.location,
+    }));
 
     return [
       `Parsed resume profile: ${JSON.stringify(parsedResumeProfile, null, 2)}`,
@@ -1302,6 +1310,7 @@ export default function App() {
       `Resume text: ${truncatedResume || 'Not available'}`,
       `Parsed resume skills: ${JSON.stringify(parsedResumeSkills, null, 2)}`,
       `LinkedIn connections: ${connections.length}`,
+      `LinkedIn connections sample: ${JSON.stringify(linkedInConnectionSample, null, 2)}`,
       'Instruction: Use the parsed resume profile and skills above as source-of-truth context for analysis and responses across all sections.',
     ].join('\n');
   };
