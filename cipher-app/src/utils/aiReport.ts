@@ -200,10 +200,16 @@ const networkReportSchema = {
   additionalProperties: false,
   properties: {
     totalConnections: { type: 'number' },
+    titleBreakdown: { type: 'array', items: { type: 'string' } },
     industryBreakdown: { type: 'array', items: { type: 'string' } },
+    connectionTypeBreakdown: { type: 'array', items: { type: 'string' } },
     seniorityBreakdown: { type: 'array', items: { type: 'string' } },
     companyBreakdown: { type: 'array', items: { type: 'string' } },
     geographyBreakdown: { type: 'array', items: { type: 'string' } },
+    careerPathAlignment: { type: 'array', items: { type: 'string' } },
+    bestConfigurationInsights: { type: 'array', items: { type: 'string' } },
+    roleMatches: { type: 'array', items: { type: 'string' } },
+    connectionUtilityStrategy: { type: 'array', items: { type: 'string' } },
     hiringManagers: { type: 'array', items: { type: 'string' } },
     recruiters: { type: 'array', items: { type: 'string' } },
     warmIntroductions: { type: 'array', items: { type: 'string' } },
@@ -215,10 +221,16 @@ const networkReportSchema = {
   },
   required: [
     'totalConnections',
+    'titleBreakdown',
     'industryBreakdown',
+    'connectionTypeBreakdown',
     'seniorityBreakdown',
     'companyBreakdown',
     'geographyBreakdown',
+    'careerPathAlignment',
+    'bestConfigurationInsights',
+    'roleMatches',
+    'connectionUtilityStrategy',
     'hiringManagers',
     'recruiters',
     'warmIntroductions',
@@ -656,6 +668,11 @@ export const parseCipherReportWithOpenAI = async ({
       schema: networkAgentSchema,
       systemPrompt:
         `You are Nexus, a networking strategy analyst.\n${sourceRules}\n` +
+        `Use network science research on career mobility and job search outcomes (e.g., strength of weak ties, diverse bridging ties, and access to decision-makers). ` +
+        `Return: (1) breakdowns for titles/levels, industries, and connection types, ` +
+        `(2) alignment analysis against candidate target job titles and plausible Atlas-style career paths, ` +
+        `(3) identify people in the uploaded connections who fill critical roles, and ` +
+        `(4) concrete strategy to make those relationships more useful. ` +
         `Return networkReport or null if there are no connections.`,
       userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
     }).then((data) => {

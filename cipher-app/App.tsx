@@ -92,6 +92,28 @@ const inferSeniority = (position: string) => {
   return 'Mid-level IC';
 };
 
+const inferConnectionType = (position: string) => {
+  const lower = position.toLowerCase();
+  if (/(recruiter|talent|sourcer|staffing)/i.test(lower)) return 'Recruiting & Talent';
+  if (/(founder|owner|co-founder|ceo|chief)/i.test(lower)) return 'Executive/Founder';
+  if (/(manager|director|head|vp|vice president)/i.test(lower)) return 'Hiring Decision-Maker';
+  if (/(engineer|developer|architect|scientist|analyst|designer|product)/i.test(lower)) {
+    return 'Practitioner/Peer';
+  }
+  return 'Other/Unknown';
+};
+
+const inferIndustry = (position: string, company: string) => {
+  const text = `${position} ${company}`.toLowerCase();
+  if (/(hospital|health|clinic|biotech|pharma|medical)/i.test(text)) return 'Healthcare & Life Sciences';
+  if (/(bank|fintech|investment|insurance|capital)/i.test(text)) return 'Financial Services';
+  if (/(software|cloud|data|ai|technology|tech)/i.test(text)) return 'Technology';
+  if (/(manufactur|logistics|supply chain|automotive|industrial)/i.test(text)) return 'Industrial & Logistics';
+  if (/(retail|consumer|ecommerce|fashion)/i.test(text)) return 'Consumer & Retail';
+  if (/(government|public|education|university|nonprofit)/i.test(text)) return 'Public, Education & Nonprofit';
+  return 'Other';
+};
+
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
     const assetFile = (asset as DocumentPicker.DocumentPickerAsset & { file?: File }).file;
@@ -320,14 +342,52 @@ export default function App() {
         `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
       );
 
+    const candidateTargetTitles = [
+      mergedProfile.currentRole,
+      ...report.careerPaths.map((path) => path.title),
+    ].filter((value) => !!value?.trim());
+
+    const roleMatches = connections
+      .filter((connection) =>
+        candidateTargetTitles.some((title) =>
+          (connection.position || '').toLowerCase().includes(title.toLowerCase())
+        )
+      )
+      .slice(0, 10)
+      .map(
+        (connection) =>
+          `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
+      );
+
     return {
       totalConnections: connections.length,
-      industryBreakdown: toTopBreakdown(connections.map((connection) => connection.position || '')),
+      titleBreakdown: toTopBreakdown(connections.map((connection) => connection.position || '')),
+      industryBreakdown: toTopBreakdown(
+        connections.map((connection) => inferIndustry(connection.position || '', connection.company || ''))
+      ),
+      connectionTypeBreakdown: toTopBreakdown(
+        connections.map((connection) => inferConnectionType(connection.position || ''))
+      ),
       seniorityBreakdown: toTopBreakdown(
         connections.map((connection) => inferSeniority(connection.position || ''))
       ),
       companyBreakdown: toTopBreakdown(connections.map((connection) => connection.company || '')),
       geographyBreakdown: toTopBreakdown(connections.map((connection) => connection.location || '')),
+      careerPathAlignment: [
+        `Target roles considered: ${candidateTargetTitles.slice(0, 5).join(', ') || 'None provided'}`,
+        'Prioritize a diversified network: close ties for sponsorship + weak ties for novel opportunities.',
+        'Career research consistently shows stronger outcomes when you combine industry depth with cross-industry bridge ties.',
+      ],
+      bestConfigurationInsights: [
+        'Maintain a blend of decision-makers, recruiters, and practitioner peers to maximize referral velocity and information flow.',
+        'Avoid over-concentration in one company or title band by adding bridge contacts in adjacent functions and industries.',
+      ],
+      roleMatches,
+      connectionUtilityStrategy: [
+        'Create a tiered outreach cadence (weekly warm reconnects, biweekly value-add shares, monthly asks).',
+        'Ask matched contacts for role-specific calibration: title expectations, hiring bar, and team-level priorities.',
+        'Use informational interviews with peers to map hidden opportunities, then seek introductions to decision-makers.',
+      ],
       hiringManagers,
       recruiters,
       warmIntroductions: [],
@@ -337,7 +397,7 @@ export default function App() {
       gaps: [],
       actionPlan: [],
     };
-  }, [analysisCompletedAgents, connections, report.networkReport]);
+  }, [analysisCompletedAgents, connections, mergedProfile.currentRole, report.careerPaths, report.networkReport]);
 
   const highRiskCount = report.skillsPortfolio.filter((skill) =>
     skill.aiRisk === 'High' || skill.aiRisk === 'Very High'
@@ -2792,74 +2852,110 @@ export default function App() {
               <Text style={styles.reportText}>
                 Total connections: {networkReportForDisplay.totalConnections}
               </Text>
+              <Text style={styles.reportSubheading}>Title / level breakdown</Text>
+              {(networkReportForDisplay.titleBreakdown || []).map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
               <Text style={styles.reportSubheading}>Industry breakdown</Text>
-              {networkReportForDisplay.industryBreakdown.map((item) => (
+              {(networkReportForDisplay.industryBreakdown || []).map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Connection type breakdown</Text>
+              {(networkReportForDisplay.connectionTypeBreakdown || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Seniority breakdown</Text>
-              {networkReportForDisplay.seniorityBreakdown.map((item) => (
+              {(networkReportForDisplay.seniorityBreakdown || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Company breakdown</Text>
-              {networkReportForDisplay.companyBreakdown.map((item) => (
+              {(networkReportForDisplay.companyBreakdown || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Geography</Text>
-              {networkReportForDisplay.geographyBreakdown.map((item) => (
+              {(networkReportForDisplay.geographyBreakdown || []).map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Career path alignment (Atlas-informed)</Text>
+              {(networkReportForDisplay.careerPathAlignment || []).map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Best-practice network configuration insights</Text>
+              {(networkReportForDisplay.bestConfigurationInsights || []).map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Connections that match target roles</Text>
+              {(networkReportForDisplay.roleMatches || []).map((item) => (
+                <Text key={item} style={styles.reportBullet}>
+                  - {item}
+                </Text>
+              ))}
+              <Text style={styles.reportSubheading}>Strategy to make connections more useful</Text>
+              {(networkReportForDisplay.connectionUtilityStrategy || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Hiring managers</Text>
-              {networkReportForDisplay.hiringManagers.map((item) => (
+              {(networkReportForDisplay.hiringManagers || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Recruiters</Text>
-              {networkReportForDisplay.recruiters.map((item) => (
+              {(networkReportForDisplay.recruiters || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Warm introduction paths</Text>
-              {networkReportForDisplay.warmIntroductions.map((item) => (
+              {(networkReportForDisplay.warmIntroductions || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Priority order</Text>
-              {networkReportForDisplay.priorityOrder.map((item) => (
+              {(networkReportForDisplay.priorityOrder || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Outreach templates</Text>
-              {networkReportForDisplay.outreachTemplates.map((item) => (
+              {(networkReportForDisplay.outreachTemplates || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>What to ask for</Text>
-              {networkReportForDisplay.whatToAsk.map((item) => (
+              {(networkReportForDisplay.whatToAsk || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Network gaps</Text>
-              {networkReportForDisplay.gaps.map((item) => (
+              {(networkReportForDisplay.gaps || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Networking action plan</Text>
-              {networkReportForDisplay.actionPlan.map((item) => (
+              {(networkReportForDisplay.actionPlan || []).map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
