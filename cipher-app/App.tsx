@@ -989,6 +989,7 @@ export default function App() {
             [
               connection.firstName,
               connection.lastName,
+              connection.url,
               connection.email,
               connection.company,
               connection.position,
@@ -997,7 +998,7 @@ export default function App() {
             ].join(',')
           )
           .join('\n');
-        const csv = `First Name,Last Name,Email Address,Company,Position,Connected On,Location\n${rows}`;
+        const csv = `First Name,Last Name,URL,Email Address,Company,Position,Connection on,Location\n${rows}`;
         setLinkedInCsv(csv);
         setLinkedInAiStatus(
           `Parsed ${parsed.connections.length} connections with AI agent.`
@@ -1417,6 +1418,8 @@ export default function App() {
     const linkedInConnectionSample = connections.slice(0, 40).map((connection) => ({
       firstName: connection.firstName,
       lastName: connection.lastName,
+      url: connection.url,
+      email: connection.email,
       company: connection.company,
       position: connection.position,
       connectedOn: connection.connectedOn,
