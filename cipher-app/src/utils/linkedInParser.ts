@@ -69,10 +69,26 @@ export const parseLinkedInWithOpenAI = async ({
   }
 
   const mimeType = inferMimeType(file);
-  const supportsFileAttachment = mimeType === 'application/pdf';
   const fileData = file.data.startsWith('data:')
     ? file.data
     : `data:${mimeType};base64,${file.data}`;
+
+  if (mimeType === 'text/csv') {
+    const csvText = decodeBase64(fileData);
+    if (!csvText.trim()) {
+      return {
+        connections: [],
+        warnings: ['Unable to decode CSV file contents.'],
+      };
+    }
+
+    return {
+      connections: parseLinkedInConnections(csvText),
+      warnings: [],
+    };
+  }
+
+  const supportsFileAttachment = mimeType === 'application/pdf';
 
   const textPrompt = `Extract LinkedIn connections into JSON:
 {
@@ -91,9 +107,7 @@ export const parseLinkedInWithOpenAI = async ({
 }
 Only include fields present in the file. If data is missing, use empty strings.`;
 
-  const fileContentPreview = !supportsFileAttachment
-    ? decodeBase64(fileData).slice(0, 20000)
-    : '';
+  const fileContentText = !supportsFileAttachment ? decodeBase64(fileData) : '';
 
   const userContent = supportsFileAttachment
     ? [
@@ -114,7 +128,7 @@ Only include fields present in the file. If data is missing, use empty strings.`
 File name: ${file.name}
 MIME type: ${mimeType}
 File contents:
-${fileContentPreview || '[Unable to decode file contents from base64. Please infer from available plain text if any.]'}`;
+${fileContentText || '[Unable to decode file contents from base64. Please infer from available plain text if any.]'}`;
 
   const response = await fetch(`${baseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
     method: 'POST',

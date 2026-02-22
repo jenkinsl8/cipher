@@ -38,17 +38,14 @@ describe('parseLinkedInWithOpenAI', () => {
     );
   });
 
-  it('uses text prompt for CSV and avoids file input payload', async () => {
-    const payload = { connections: [{ firstName: 'Sam' }], warnings: [] };
+  it('parses CSV locally without calling OpenAI', async () => {
     const fetchMock = globalThis.fetch as jest.Mock;
-    fetchMock.mockResolvedValue({
-      ok: true,
-      json: async () => ({
-        choices: [{ message: { content: JSON.stringify(payload) } }],
-      }),
-    });
 
-    const csv = 'First Name,Last Name\nSam,Lee';
+    const rows = Array.from({ length: 970 }, (_, i) => {
+      const index = i + 1;
+      return `First${index},Last${index},,Company${index},,1/1/2024,`;
+    }).join('\n');
+    const csv = `First Name,Last Name,Email Address,Company,Position,Connected On,Location\n${rows}`;
     const base64 = Buffer.from(csv, 'utf8').toString('base64');
 
     const result = await parseLinkedInWithOpenAI({
@@ -61,12 +58,23 @@ describe('parseLinkedInWithOpenAI', () => {
       },
     });
 
-    expect(result.connections?.[0]?.firstName).toBe('Sam');
-
-    const [, options] = fetchMock.mock.calls[0];
-    const body = JSON.parse(options.body);
-    expect(typeof body.messages[1].content).toBe('string');
-    expect(body.messages[1].content).toContain('First Name,Last Name');
-    expect(body.messages[1].content).not.toContain('"type":"file"');
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(result.connections).toHaveLength(970);
+    expect(result.connections?.[0]).toMatchObject({
+      firstName: 'First1',
+      lastName: 'Last1',
+      email: '',
+      company: 'Company1',
+      position: '',
+      location: '',
+    });
+    expect(result.connections?.[969]).toMatchObject({
+      firstName: 'First970',
+      lastName: 'Last970',
+      email: '',
+      company: 'Company970',
+      position: '',
+      location: '',
+    });
   });
 });
