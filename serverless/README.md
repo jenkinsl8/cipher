@@ -37,9 +37,10 @@ wrangler deploy
 After deploy, copy the Worker URL (e.g., `https://cipher-parser.<your-subdomain>.workers.dev`)
 and paste it into the app's **AI Parser URL** field.
 
-## Endpoint
+## Endpoints
 
-`POST /api/resume/parse`
+- `POST /api/resume/parse`
+- `POST /api/agent/chat`
 
 Payload:
 
@@ -64,3 +65,6 @@ Response:
   "warnings": [""]
 }
 ```
+
+
+`/api/agent/chat` forwards chat-completions requests to OpenAI using the same server-side `OPENAI_API_KEY`, so the app can run agent chat in serverless mode without a client API key.

@@ -1497,27 +1497,42 @@ export default function App() {
     prompt: string;
     question: string;
   }) => {
-    const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${aiApiKey.trim()}`,
-        'Content-Type': 'application/json',
+    const messages = [
+      {
+        role: 'system',
+        content: `You are ${name}, a ${role}. ${prompt} ${sourceNote}`,
       },
-      body: JSON.stringify({
-        model: aiModel.trim() || 'gpt-5.2',
-        temperature: 0.35,
-        messages: [
-          {
-            role: 'system',
-            content: `You are ${name}, a ${role}. ${prompt} ${sourceNote}`,
-          },
-          {
-            role: 'user',
-            content: `Context:\n${buildAgentContext()}\n\nQuestion:\n${question}`,
-          },
-        ],
-      }),
-    });
+      {
+        role: 'user',
+        content: `Context:\n${buildAgentContext()}\n\nQuestion:\n${question}`,
+      },
+    ];
+
+    const response =
+      aiParserMode === 'openai'
+        ? await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${aiApiKey.trim()}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: aiModel.trim() || 'gpt-5.2',
+              temperature: 0.35,
+              messages,
+            }),
+          })
+        : await fetch(`${aiBaseUrl.replace(/\/$/, '')}/api/agent/chat`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              model: aiModel.trim() || 'gpt-5.2',
+              temperature: 0.35,
+              messages,
+            }),
+          });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1525,7 +1540,8 @@ export default function App() {
     }
 
     const data = await response.json();
-    const reply = data.choices?.[0]?.message?.content?.trim() || '';
+    const reply =
+      data.reply?.trim() || data.choices?.[0]?.message?.content?.trim() || '';
     if (!reply) {
       throw new Error(`Agent ${name} returned empty response.`);
     }
@@ -1620,12 +1636,12 @@ export default function App() {
       setStatus('Add a question before sending.');
       return;
     }
-    if (aiParserMode !== 'openai') {
-      setStatus('Agent chat requires OpenAI mode. Switch to OpenAI API key.');
+    if (aiParserMode === 'openai' && !aiApiKey.trim()) {
+      setStatus('Add your OpenAI API key to enable agent chat.');
       return;
     }
-    if (!aiApiKey.trim()) {
-      setStatus('Add your OpenAI API key to enable agent chat.');
+    if (aiParserMode === 'serverless' && !aiBaseUrl.trim()) {
+      setStatus('Add the AI parser URL to enable agent chat.');
       return;
     }
 

@@ -12,10 +12,16 @@ It uses `pdf-parse` for robust PDF extraction.
    - `OPENAI_BASE_URL` (optional, default: `https://api.openai.com`)
 3. Deploy.
 
-Your endpoint will be:
+Your resume parse endpoint will be:
 
 ```
 https://<your-project>.vercel.app/api/resume/parse
+```
+
+Agent chat endpoint:
+
+```
+https://<your-project>.vercel.app/api/agent/chat
 ```
 
 ## Test
@@ -28,7 +34,7 @@ curl -i https://<your-project>.vercel.app/api/resume/parse \
 
 ## App configuration
 
-In the app, set the **AI parser URL** to:
+In the app, set the **AI parser URL** to this base URL (used for resume parsing and agent chat):
 
 ```
 https://<your-project>.vercel.app
