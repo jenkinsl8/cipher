@@ -190,6 +190,7 @@ export default function App() {
   const [linkedInAiStatus, setLinkedInAiStatus] = useState('');
   const [linkedInAiEnabled, setLinkedInAiEnabled] = useState(true);
   const [activeCard, setActiveCard] = useState('home');
+  const [educationPlanUnlocked, setEducationPlanUnlocked] = useState(false);
   const [showAtsDetail, setShowAtsDetail] = useState(false);
   const [resumeText, setResumeText] = useState('');
   const [resumeStatus, setResumeStatus] = useState('');
@@ -305,6 +306,7 @@ export default function App() {
     { id: 'linkedin', label: 'LinkedIn Upload', visible: true },
     { id: 'market', label: 'Market Conditions', visible: resumeReady },
     { id: 'skills', label: 'Skills Analysis', visible: resumeReady },
+    { id: 'education-plan', label: 'Education Plan', visible: educationPlanUnlocked },
     { id: 'career', label: 'Career Paths', visible: resumeReady },
     { id: 'ats', label: 'ATS Analysis', visible: resumeReady },
     { id: 'network', label: 'Network Analysis', visible: linkedInReady },
@@ -316,7 +318,7 @@ export default function App() {
     if (!visibleIds.includes(activeCard)) {
       setActiveCard('home');
     }
-  }, [activeCard, resumeReady, linkedInReady]);
+  }, [activeCard, resumeReady, linkedInReady, educationPlanUnlocked]);
 
   const formatExpiryDate = (uploadedAt: number) =>
     new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
@@ -1789,6 +1791,18 @@ export default function App() {
           <CollapsibleCard title={report.aiResilience.title} defaultCollapsed={false}>
             <GraphicSectionBody section={report.aiResilience} />
           </CollapsibleCard>
+          <CollapsibleCard title={report.missingSkillsAnalysis.title} defaultCollapsed={false}>
+            <GraphicSectionBody section={report.missingSkillsAnalysis} />
+          </CollapsibleCard>
+          <Pressable
+            style={styles.primaryButton}
+            onPress={() => {
+              setEducationPlanUnlocked(true);
+              setActiveCard('education-plan');
+            }}
+          >
+            <Text style={styles.primaryButtonText}>Build Full Development Plan</Text>
+          </Pressable>
           <CollapsibleCard title="Top valuable skills" defaultCollapsed={false}>
             {topValuableSkills.length ? (
               topValuableSkills.map((skill) => (
@@ -1876,6 +1890,34 @@ export default function App() {
             buttonLabel: 'Ask Aegis',
             placeholder: 'Ask about skills to prioritize or de-risk.',
           })}
+        </Card>
+      );
+    }
+
+    if (activeCard === 'education-plan') {
+      return (
+        <Card
+          title="Education Plan"
+          subtitle="Activate a full development curriculum, mentor, and project execution timeline."
+        >
+          <CollapsibleCard title={report.educationPlan.title} defaultCollapsed={false}>
+            <GraphicSectionBody section={report.educationPlan} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.calendarPlan.title} defaultCollapsed={false}>
+            <GraphicSectionBody section={report.calendarPlan} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.mentorBlueprint.title}>
+            <GraphicSectionBody section={report.mentorBlueprint} />
+          </CollapsibleCard>
+          <CollapsibleCard title={report.projectsToPursue.title}>
+            <GraphicSectionBody section={report.projectsToPursue} />
+          </CollapsibleCard>
+          <Text style={styles.helper}>
+            This screen appears only after you activate the full development plan from Skills Analysis.
+          </Text>
+          <Pressable style={styles.secondaryButton} onPress={() => setActiveCard('skills')}>
+            <Text style={styles.secondaryButtonText}>Back to Skills Analysis</Text>
+          </Pressable>
         </Card>
       );
     }

@@ -253,12 +253,16 @@ export const createEmptyReport = (): CipherReport => ({
   marketSnapshot: createSection('market-snapshot', 'Market Snapshot'),
   skillsPortfolio: [],
   aiResilience: createSection('ai-resilience', 'AI Resilience Assessment'),
+  missingSkillsAnalysis: createSection('missing-skills-analysis', 'Missing Skills and How to Close the Gaps'),
   aiForward: createSection('ai-forward', 'AI-Forward Opportunities'),
   demographicStrategy: createSection('demographic-strategy', 'Demographic Strategy'),
   careerInsights: createSection('career-insights', 'Comprehensive Career Insights'),
   careerPaths: [],
   learningRoadmap: createSection('learning-roadmap', 'Competency-Based Learning Roadmap'),
   skillsGapResources: createSection('skills-gap-resources', 'Market-Validated Learning Resources'),
+  educationPlan: createSection('education-plan', 'Full Development Plan'),
+  calendarPlan: createSection('calendar-plan', 'Calendar-Based Lesson and Delivery Plan'),
+  mentorBlueprint: createSection('mentor-blueprint', 'AI Training Mentor Blueprint'),
   competencyMilestones: createSection('competency-milestones', 'Competency Milestones'),
   projectsToPursue: createSection('projects-to-pursue', 'Projects and Experiences to Pursue'),
   earningsMaximization: createSection('earnings-maximization', 'Earnings Maximization Strategy'),
@@ -282,11 +286,15 @@ export const normalizeAiReport = (payload: Partial<CipherReport>): CipherReport 
     ...payload,
     marketSnapshot: ensureSection(payload.marketSnapshot, base.marketSnapshot),
     aiResilience: ensureSection(payload.aiResilience, base.aiResilience),
+    missingSkillsAnalysis: ensureSection(payload.missingSkillsAnalysis, base.missingSkillsAnalysis),
     aiForward: ensureSection(payload.aiForward, base.aiForward),
     demographicStrategy: ensureSection(payload.demographicStrategy, base.demographicStrategy),
     careerInsights: ensureSection(payload.careerInsights, base.careerInsights),
     learningRoadmap: ensureSection(payload.learningRoadmap, base.learningRoadmap),
     skillsGapResources: ensureSection(payload.skillsGapResources, base.skillsGapResources),
+    educationPlan: ensureSection(payload.educationPlan, base.educationPlan),
+    calendarPlan: ensureSection(payload.calendarPlan, base.calendarPlan),
+    mentorBlueprint: ensureSection(payload.mentorBlueprint, base.mentorBlueprint),
     competencyMilestones: ensureSection(payload.competencyMilestones, base.competencyMilestones),
     projectsToPursue: ensureSection(payload.projectsToPursue, base.projectsToPursue),
     earningsMaximization: ensureSection(payload.earningsMaximization, base.earningsMaximization),
@@ -459,17 +467,25 @@ const skillsAgentSchema = {
   properties: {
     skillsPortfolio: { type: 'array', items: skillInsightSchema },
     aiResilience: reportSectionSchema,
+    missingSkillsAnalysis: reportSectionSchema,
     competencyMilestones: reportSectionSchema,
     skillsGapResources: reportSectionSchema,
     learningRoadmap: reportSectionSchema,
+    educationPlan: reportSectionSchema,
+    calendarPlan: reportSectionSchema,
+    mentorBlueprint: reportSectionSchema,
     projectsToPursue: reportSectionSchema,
   },
   required: [
     'skillsPortfolio',
     'aiResilience',
+    'missingSkillsAnalysis',
     'competencyMilestones',
     'skillsGapResources',
     'learningRoadmap',
+    'educationPlan',
+    'calendarPlan',
+    'mentorBlueprint',
     'projectsToPursue',
   ],
 };
@@ -581,7 +597,7 @@ export const parseCipherReportWithOpenAI = async ({
   };
 
   const skillsPromise = callAgent<
-    Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>
+    Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'missingSkillsAnalysis' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'educationPlan' | 'calendarPlan' | 'mentorBlueprint' | 'projectsToPursue'>
   >(
       {
         apiKey,
@@ -591,9 +607,19 @@ export const parseCipherReportWithOpenAI = async ({
         schema: skillsAgentSchema,
         systemPrompt:
           `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n` +
-          `Return skillsPortfolio, aiResilience, competencyMilestones, skillsGapResources, ` +
-          `learningRoadmap, and projectsToPursue. Use ids: ai-resilience, competency-milestones, ` +
-          `skills-gap-resources, learning-roadmap, projects-to-pursue.`,
+          `Identify concrete skill gaps that separate this candidate from stronger and strongest candidates, then provide precise actions to close each gap.
+` +
+          `Return skillsPortfolio, aiResilience, missingSkillsAnalysis, competencyMilestones, skillsGapResources, ` +
+          `learningRoadmap, educationPlan, calendarPlan, mentorBlueprint, and projectsToPursue. ` +
+          `Use ids: ai-resilience, missing-skills-analysis, competency-milestones, skills-gap-resources, ` +
+          `learning-roadmap, education-plan, calendar-plan, mentor-blueprint, projects-to-pursue.
+` +
+          `In missingSkillsAnalysis bullets, use this format exactly: ` +
+          `Gap: <missing capability> | Why it matters: <hiring impact> | How to fill it: <specific actions, tools, and measurable outcome>. ` +
+          `In educationPlan, provide a full development plan with curriculum inspired by top global programs and tied to the candidate's industry context. ` +
+          `In calendarPlan, define a timeline with lessons and milestones that can be tracked on a calendar. ` +
+          `In mentorBlueprint, define how an AI training mentor should coach, evaluate, and adapt the curriculum. ` +
+          `In projectsToPursue, include industry-recognized real-world project suggestions suitable for a resume and show cross-industry intersections likely to emerge in the near future.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
       }
     ).then((data) => {
