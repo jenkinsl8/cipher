@@ -1750,7 +1750,7 @@ export default function App() {
           subtitle="AI market agent builds this from public sources and your location."
         >
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
-            <GraphicSectionBody section={report.marketSnapshot} />
+            <GraphicSectionBody section={report.marketSnapshot} showTrendIndicator />
             {!hasAiReport ? (
               <Text style={styles.helper}>
                 Run AI analysis to generate market conditions and citations.
@@ -1758,10 +1758,10 @@ export default function App() {
             ) : null}
           </CollapsibleCard>
           <CollapsibleCard title={report.marketOutlook.title}>
-            <GraphicSectionBody section={report.marketOutlook} />
+            <GraphicSectionBody section={report.marketOutlook} showTrendIndicator />
           </CollapsibleCard>
           <CollapsibleCard title={report.geographicOptions.title}>
-            <GraphicSectionBody section={report.geographicOptions} />
+            <GraphicSectionBody section={report.geographicOptions} showTrendIndicator />
           </CollapsibleCard>
           {report.internationalPlan ? (
             <CollapsibleCard title={report.internationalPlan.title}>
@@ -2497,28 +2497,104 @@ const ReportSectionBody = ({
 
 const GraphicSectionBody = ({
   section,
+  showTrendIndicator = false,
 }: {
   section: { title: string; summary: string; bullets?: string[] };
-}) => (
-  <View style={styles.graphicSection}>
-    <View style={styles.graphicSummaryCard}>
-      <Text style={styles.graphicLabel}>Summary</Text>
-      <Text style={styles.graphicSummaryText}>{section.summary}</Text>
-    </View>
-    {section.bullets?.length ? (
-      <View style={styles.insightList}>
-        {section.bullets.map((item, index) => (
-          <View key={item} style={styles.insightRow}>
-            <View style={styles.insightBadge}>
-              <Text style={styles.insightBadgeText}>{index + 1}</Text>
-            </View>
-            <Text style={styles.insightText}>{item}</Text>
-          </View>
-        ))}
+  showTrendIndicator?: boolean;
+}) => {
+  const trendSignal = getTrendSignal(section);
+
+  return (
+    <View style={styles.graphicSection}>
+      <View style={styles.graphicSummaryCard}>
+        <Text style={styles.graphicLabel}>Summary</Text>
+        <Text style={styles.graphicSummaryText}>{section.summary}</Text>
       </View>
-    ) : null}
-  </View>
-);
+      {showTrendIndicator ? (
+        <View
+          style={[
+            styles.trendCard,
+            trendSignal.tone === 'positive'
+              ? styles.trendCardPositive
+              : trendSignal.tone === 'negative'
+                ? styles.trendCardNegative
+                : styles.trendCardNeutral,
+          ]}
+        >
+          <View style={styles.trendHeader}>
+            <Text style={styles.trendLabel}>Trend signal</Text>
+            <Text style={styles.trendValue}>
+              {trendSignal.icon} {trendSignal.label}
+            </Text>
+          </View>
+          <Text style={styles.trendReason}>{trendSignal.reason}</Text>
+        </View>
+      ) : null}
+      {section.bullets?.length ? (
+        <View style={styles.insightList}>
+          {section.bullets.map((item, index) => (
+            <View key={item} style={styles.insightRow}>
+              <View style={styles.insightBadge}>
+                <Text style={styles.insightBadgeText}>{index + 1}</Text>
+              </View>
+              <Text style={styles.insightText}>{item}</Text>
+            </View>
+          ))}
+        </View>
+      ) : null}
+    </View>
+  );
+};
+
+const getTrendSignal = (section: {
+  summary: string;
+  bullets?: string[];
+}): {
+  tone: 'positive' | 'negative' | 'neutral';
+  label: 'Positive' | 'Negative' | 'Neutral';
+  icon: '↗' | '↘' | '→';
+  reason: string;
+} => {
+  const content = [section.summary, ...(section.bullets ?? [])].join(' ').toLowerCase();
+  const positiveMatches = (
+    content.match(
+      /growth|hiring|expand|increase|improv|strong|upward|surge|bullish|opportunity|momentum/g,
+    ) ?? []
+  ).length;
+  const negativeMatches = (
+    content.match(
+      /layoff|decline|slow|decrease|downward|risk|uncertain|bearish|contraction|drop|headwind/g,
+    ) ?? []
+  ).length;
+
+  if (positiveMatches > negativeMatches) {
+    return {
+      tone: 'positive',
+      label: 'Positive',
+      icon: '↗',
+      reason:
+        'Signals mention more hiring and growth momentum than contraction risks in this market update.',
+    };
+  }
+
+  if (negativeMatches > positiveMatches) {
+    return {
+      tone: 'negative',
+      label: 'Negative',
+      icon: '↘',
+      reason:
+        'Signals mention more layoffs, slowdown, or uncertainty than expansion indicators right now.',
+    };
+  }
+
+  return {
+    tone: 'neutral',
+    label: 'Neutral',
+    icon: '→',
+    reason:
+      'Signals are mixed or balanced, so the market outlook is currently interpreted as stable to watchful.',
+  };
+};
 
 const CollapsibleCard = ({
   title,
@@ -3179,6 +3255,47 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     lineHeight: 22,
+  },
+  trendCard: {
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    gap: 8,
+  },
+  trendCardPositive: {
+    backgroundColor: 'rgba(47, 183, 112, 0.14)',
+    borderColor: 'rgba(47, 183, 112, 0.4)',
+  },
+  trendCardNegative: {
+    backgroundColor: 'rgba(226, 109, 109, 0.14)',
+    borderColor: 'rgba(226, 109, 109, 0.4)',
+  },
+  trendCardNeutral: {
+    backgroundColor: 'rgba(154, 164, 178, 0.14)',
+    borderColor: 'rgba(154, 164, 178, 0.4)',
+  },
+  trendHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  trendLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+  },
+  trendValue: {
+    color: colors.text,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  trendReason: {
+    color: colors.text,
+    fontSize: 14,
+    lineHeight: 20,
   },
   insightList: {
     gap: 10,
