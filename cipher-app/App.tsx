@@ -342,6 +342,43 @@ export default function App() {
     return missing;
   }, [profile, mergedProfile, resumeSkills, resumeText, resumeFilePayload, hasAiReport]);
 
+  const readinessScore = useMemo(() => {
+    const checks = [
+      !!resumeFileName,
+      linkedInReady,
+      hasAiReport,
+      !!mergedProfile.location.trim(),
+      resumeSkills.length > 0,
+    ];
+    const completed = checks.filter(Boolean).length;
+    return Math.round((completed / checks.length) * 100);
+  }, [resumeFileName, linkedInReady, hasAiReport, mergedProfile.location, resumeSkills.length]);
+
+  const readinessTone = readinessScore >= 80 ? 'Ready' : readinessScore >= 50 ? 'In progress' : 'Starting';
+
+  const statusIndicators = [
+    {
+      label: 'Resume',
+      state: resumeFileName ? 'Complete' : 'Needed',
+      active: !!resumeFileName,
+    },
+    {
+      label: 'LinkedIn',
+      state: linkedInReady ? 'Complete' : 'Needed',
+      active: linkedInReady,
+    },
+    {
+      label: 'AI Report',
+      state: hasAiReport ? 'Complete' : 'Needed',
+      active: hasAiReport,
+    },
+    {
+      label: 'Profile',
+      state: mergedProfile.location.trim() ? 'Complete' : 'Needed',
+      active: !!mergedProfile.location.trim(),
+    },
+  ];
+
   useEffect(() => {
     setAiResumeExtraction(null);
     setAiStatus('');
@@ -1251,14 +1288,41 @@ export default function App() {
       return (
         <Card
           title="Main Screen"
-          subtitle="Upload your resume and LinkedIn file to unlock the AI analysis cards."
+          subtitle="Visual command center for your career strategy across web and mobile."
         >
+          <View style={styles.heroPanel}>
+            <View style={styles.heroHeader}>
+              <Text style={styles.heroEyebrow}>Launch readiness</Text>
+              <Text style={styles.heroPercent}>{readinessScore}%</Text>
+            </View>
+            <View style={styles.heroProgressTrack}>
+              <View style={[styles.heroProgressFill, { width: `${readinessScore}%` }]} />
+            </View>
+            <View style={styles.statusIndicatorRow}>
+              {statusIndicators.map((item) => (
+                <StatusIndicator
+                  key={item.label}
+                  label={item.label}
+                  state={item.state}
+                  active={item.active}
+                />
+              ))}
+            </View>
+            <View style={styles.heroActions}>
+              <QuickActionButton label="Upload Resume" icon="📄" onPress={handleResumePick} />
+              <QuickActionButton label="Upload LinkedIn" icon="🔗" onPress={handleLinkedInPick} />
+              <QuickActionButton
+                label={aiReportLoading ? 'Running' : 'Run AI'}
+                icon="⚡"
+                onPress={() => handleAiReportGenerate(false)}
+              />
+            </View>
+            <Text style={styles.heroMeta}>Current phase: {readinessTone}</Text>
+          </View>
+
           <View style={styles.cardRow}>
             <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>Resume Upload</Text>
-              <Text style={styles.helper}>
-                Supports PDF, DOCX, DOC, or plain text.
-              </Text>
+              <Text style={styles.reportTitle}>Resume</Text>
               <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
                 <Text style={styles.secondaryButtonText}>
                   {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
@@ -1275,8 +1339,7 @@ export default function App() {
               {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
             </View>
             <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>LinkedIn Upload</Text>
-              <Text style={styles.helper}>Upload any LinkedIn export format.</Text>
+              <Text style={styles.reportTitle}>LinkedIn</Text>
               <Pressable style={styles.secondaryButton} onPress={handleLinkedInPick}>
                 <Text style={styles.secondaryButtonText}>
                   {Platform.OS === 'web' ? 'Upload LinkedIn file' : 'Pick LinkedIn file'}
@@ -1299,12 +1362,13 @@ export default function App() {
             </View>
           </View>
 
-          <Text style={styles.label}>AI analysis</Text>
-          <Pressable style={styles.primaryButton} onPress={() => handleAiReportGenerate(false)}>
-            <Text style={styles.primaryButtonText}>
-              {aiReportLoading ? 'Running AI analysis...' : 'Run AI analysis'}
-            </Text>
-          </Pressable>
+          <View style={styles.compactButtonRow}>
+            <Pressable style={styles.primaryButton} onPress={() => handleAiReportGenerate(false)}>
+              <Text style={styles.primaryButtonText}>
+                {aiReportLoading ? 'Running AI analysis...' : 'Run AI analysis'}
+              </Text>
+            </Pressable>
+          </View>
           {aiReportUpdatedAt ? (
             <Text style={styles.helper}>
               Last updated {formatTimestamp(aiReportUpdatedAt)}.
@@ -2376,6 +2440,37 @@ const DashboardCard = ({
   </View>
 );
 
+const StatusIndicator = ({
+  label,
+  state,
+  active,
+}: {
+  label: string;
+  state: string;
+  active: boolean;
+}) => (
+  <View style={[styles.statusIndicator, active ? styles.statusIndicatorActive : null]}>
+    <View style={[styles.statusDot, active ? styles.statusDotActive : null]} />
+    <Text style={styles.statusLabel}>{label}</Text>
+    <Text style={styles.statusState}>{state}</Text>
+  </View>
+);
+
+const QuickActionButton = ({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon: string;
+  onPress: () => void;
+}) => (
+  <Pressable style={styles.quickActionButton} onPress={onPress}>
+    <Text style={styles.quickActionIcon}>{icon}</Text>
+    <Text style={styles.quickActionText}>{label}</Text>
+  </Pressable>
+);
+
 const ReportSectionBody = ({
   section,
 }: {
@@ -2696,6 +2791,113 @@ const styles = StyleSheet.create({
     color: colors.muted,
     marginBottom: 12,
   },
+  heroPanel: {
+    backgroundColor: '#11182a',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#2a3b62',
+    marginBottom: 14,
+    gap: 10,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  heroEyebrow: {
+    color: colors.muted,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontWeight: '700',
+  },
+  heroPercent: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  heroProgressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#0a0f1e',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#25304a',
+  },
+  heroProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#6c9dff',
+  },
+  statusIndicatorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  statusIndicator: {
+    backgroundColor: '#0d1323',
+    borderRadius: 12,
+    padding: 10,
+    minWidth: 116,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexGrow: 1,
+    gap: 2,
+  },
+  statusIndicatorActive: {
+    borderColor: '#6c9dff',
+    backgroundColor: '#16213a',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#5d6372',
+    marginBottom: 4,
+  },
+  statusDotActive: {
+    backgroundColor: '#54e1a1',
+  },
+  statusLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  statusState: {
+    color: colors.text,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickActionButton: {
+    backgroundColor: '#1a2743',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#30456f',
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    flexGrow: 1,
+    minWidth: 130,
+    justifyContent: 'center',
+  },
+  quickActionIcon: {
+    fontSize: 16,
+  },
+  quickActionText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  heroMeta: {
+    color: colors.muted,
+    marginTop: 2,
+  },
   field: {
     marginBottom: 12,
   },
@@ -2762,6 +2964,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 12,
+  },
+  compactButtonRow: {
+    maxWidth: 260,
   },
   primaryButtonText: {
     color: '#fff',
