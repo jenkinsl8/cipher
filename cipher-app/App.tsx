@@ -4,7 +4,6 @@ import * as FileSystem from 'expo-file-system';
 import React, { useEffect, useMemo, useState } from 'react';
 import { Buffer } from 'buffer';
 import {
-  ActivityIndicator,
   Platform,
   Pressable,
   SafeAreaView,
@@ -66,53 +65,6 @@ const riskOptions: RiskTolerance[] = ['Low', 'Moderate', 'High'];
 const aiOptions: AILiteracy[] = ['Beginner', 'Intermediate', 'Advanced'];
 const goalOptions: CareerGoal[] = ['Stability', 'Growth', 'Entrepreneurship'];
 const FILE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
-
-type AnalysisAgentId = 'market' | 'skills' | 'career' | 'ats' | 'network';
-type AnalysisScreenId = AnalysisAgentId;
-
-const toTopBreakdown = (values: string[], limit = 8) => {
-  const counts = new Map<string, number>();
-  values.forEach((rawValue) => {
-    const value = rawValue.trim();
-    if (!value) return;
-    counts.set(value, (counts.get(value) || 0) + 1);
-  });
-  return [...counts.entries()]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([label, count]) => `${label} (${count})`);
-};
-
-const inferSeniority = (position: string) => {
-  const lower = position.toLowerCase();
-  if (/(chief|cxo|vp|vice president|head|director)/i.test(lower)) return 'Leadership';
-  if (/(manager|lead)/i.test(lower)) return 'Management';
-  if (/(senior|sr\.?)/i.test(lower)) return 'Senior IC';
-  if (/(intern|junior|jr\.?|associate)/i.test(lower)) return 'Entry/Junior';
-  return 'Mid-level IC';
-};
-
-const inferConnectionType = (position: string) => {
-  const lower = position.toLowerCase();
-  if (/(recruiter|talent|sourcer|staffing)/i.test(lower)) return 'Recruiting & Talent';
-  if (/(founder|owner|co-founder|ceo|chief)/i.test(lower)) return 'Executive/Founder';
-  if (/(manager|director|head|vp|vice president)/i.test(lower)) return 'Hiring Decision-Maker';
-  if (/(engineer|developer|architect|scientist|analyst|designer|product)/i.test(lower)) {
-    return 'Practitioner/Peer';
-  }
-  return 'Other/Unknown';
-};
-
-const inferIndustry = (position: string, company: string) => {
-  const text = `${position} ${company}`.toLowerCase();
-  if (/(hospital|health|clinic|biotech|pharma|medical)/i.test(text)) return 'Healthcare & Life Sciences';
-  if (/(bank|fintech|investment|insurance|capital)/i.test(text)) return 'Financial Services';
-  if (/(software|cloud|data|ai|technology|tech)/i.test(text)) return 'Technology';
-  if (/(manufactur|logistics|supply chain|automotive|industrial)/i.test(text)) return 'Industrial & Logistics';
-  if (/(retail|consumer|ecommerce|fashion)/i.test(text)) return 'Consumer & Retail';
-  if (/(government|public|education|university|nonprofit)/i.test(text)) return 'Public, Education & Nonprofit';
-  return 'Other';
-};
 
 const readAssetBinary = async (asset: DocumentPicker.DocumentPickerAsset) => {
   if (Platform.OS === 'web') {
@@ -248,7 +200,7 @@ export default function App() {
     data: string;
   } | null>(null);
   const [resumeUploadedAt, setResumeUploadedAt] = useState<number | null>(null);
-  const [aiModel, setAiModel] = useState('gpt-5.2');
+  const [aiModel, setAiModel] = useState('gpt-4o');
   const [aiBaseUrl, setAiBaseUrl] = useState('https://api.openai.com');
   const [aiApiKey, setAiApiKey] = useState('');
   const [aiParserMode, setAiParserMode] = useState<'openai' | 'serverless'>(
@@ -263,7 +215,6 @@ export default function App() {
   const [aiReportStatus, setAiReportStatus] = useState('');
   const [aiReportUpdatedAt, setAiReportUpdatedAt] = useState<number | null>(null);
   const [aiReportLoading, setAiReportLoading] = useState(false);
-  const [analysisCompletedAgents, setAnalysisCompletedAgents] = useState<AnalysisAgentId[]>([]);
   const [lastAiReportKey, setLastAiReportKey] = useState('');
   const [agentQuestion, setAgentQuestion] = useState('');
   const [agentThread, setAgentThread] = useState<
@@ -323,81 +274,6 @@ export default function App() {
 
   const resumeReady = !!resumeText.trim() || !!resumeFilePayload?.data;
   const linkedInReady = !!linkedInFilePayload?.data || connections.length > 0;
-  const networkReportForDisplay = useMemo(() => {
-    if (report.networkReport) return report.networkReport;
-    if (!analysisCompletedAgents.includes('network') || connections.length === 0) {
-      return null;
-    }
-
-    const recruiters = connections
-      .filter((connection) => /(recruiter|talent)/i.test(connection.position || ''))
-      .slice(0, 8)
-      .map((connection) =>
-        `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
-      );
-    const hiringManagers = connections
-      .filter((connection) => /(manager|director|head|vp|chief)/i.test(connection.position || ''))
-      .slice(0, 8)
-      .map((connection) =>
-        `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
-      );
-
-    const candidateTargetTitles = [
-      mergedProfile.currentRole,
-      ...report.careerPaths.map((path) => path.title),
-    ].filter((value) => !!value?.trim());
-
-    const roleMatches = connections
-      .filter((connection) =>
-        candidateTargetTitles.some((title) =>
-          (connection.position || '').toLowerCase().includes(title.toLowerCase())
-        )
-      )
-      .slice(0, 10)
-      .map(
-        (connection) =>
-          `${connection.firstName} ${connection.lastName} - ${connection.position} @ ${connection.company}`
-      );
-
-    return {
-      totalConnections: connections.length,
-      titleBreakdown: toTopBreakdown(connections.map((connection) => connection.position || '')),
-      industryBreakdown: toTopBreakdown(
-        connections.map((connection) => inferIndustry(connection.position || '', connection.company || ''))
-      ),
-      connectionTypeBreakdown: toTopBreakdown(
-        connections.map((connection) => inferConnectionType(connection.position || ''))
-      ),
-      seniorityBreakdown: toTopBreakdown(
-        connections.map((connection) => inferSeniority(connection.position || ''))
-      ),
-      companyBreakdown: toTopBreakdown(connections.map((connection) => connection.company || '')),
-      geographyBreakdown: toTopBreakdown(connections.map((connection) => connection.location || '')),
-      careerPathAlignment: [
-        `Target roles considered: ${candidateTargetTitles.slice(0, 5).join(', ') || 'None provided'}`,
-        'Prioritize a diversified network: close ties for sponsorship + weak ties for novel opportunities.',
-        'Career research consistently shows stronger outcomes when you combine industry depth with cross-industry bridge ties.',
-      ],
-      bestConfigurationInsights: [
-        'Maintain a blend of decision-makers, recruiters, and practitioner peers to maximize referral velocity and information flow.',
-        'Avoid over-concentration in one company or title band by adding bridge contacts in adjacent functions and industries.',
-      ],
-      roleMatches,
-      connectionUtilityStrategy: [
-        'Create a tiered outreach cadence (weekly warm reconnects, biweekly value-add shares, monthly asks).',
-        'Ask matched contacts for role-specific calibration: title expectations, hiring bar, and team-level priorities.',
-        'Use informational interviews with peers to map hidden opportunities, then seek introductions to decision-makers.',
-      ],
-      hiringManagers,
-      recruiters,
-      warmIntroductions: [],
-      priorityOrder: [],
-      outreachTemplates: [],
-      whatToAsk: [],
-      gaps: [],
-      actionPlan: [],
-    };
-  }, [analysisCompletedAgents, connections, mergedProfile.currentRole, report.careerPaths, report.networkReport]);
 
   const highRiskCount = report.skillsPortfolio.filter((skill) =>
     skill.aiRisk === 'High' || skill.aiRisk === 'Very High'
@@ -415,370 +291,6 @@ export default function App() {
       .sort((a, b) => b.marketValueScore - a.marketValueScore)
       .slice(0, 5);
   }, [report.skillsPortfolio]);
-  const highDemandSkills = useMemo(() => {
-    return report.skillsPortfolio.filter((skill) =>
-      skill.demandLevel.toLowerCase().includes('high')
-    );
-  }, [report.skillsPortfolio]);
-  const demandSectors = useMemo(() => {
-    const counts = new Map<string, number>();
-    highDemandSkills.forEach((skill) => {
-      const label = skill.category.replace(/-/g, ' ');
-      counts.set(label, (counts.get(label) || 0) + 1);
-    });
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([label]) => label);
-  }, [highDemandSkills]);
-  const demandIndustries = useMemo(() => {
-    const counts = new Map<string, number>();
-    highDemandSkills.forEach((skill) => {
-      skill.industryOutlook.industries.forEach((industry) => {
-        const label = industry.trim();
-        if (!label) return;
-        counts.set(label, (counts.get(label) || 0) + 1);
-      });
-    });
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5)
-      .map(([label]) => label);
-  }, [highDemandSkills]);
-  const normalizeSkillName = (value: string) =>
-    value
-      .toLowerCase()
-      .replace(/[^a-z0-9+/#\s.-]/g, '')
-      .replace(/\s+/g, ' ')
-      .trim();
-  const getSkillAliases = (value: string) => {
-    const normalized = normalizeSkillName(value);
-    const aliases = new Set([normalized]);
-    const aliasMap: Record<string, string[]> = {
-      'ml': ['machine learning', 'machine-learning', 'machine learning engineering'],
-      'ai': ['artificial intelligence'],
-      'cloud architecture': ['cloud architect', 'cloud solution architecture', 'solution architecture'],
-      'solution architecture': ['solutions architecture', 'cloud architecture'],
-      'machine learning engineering': ['ml engineering', 'machine learning engineer', 'ml engineer'],
-      'devops': ['dev ops', 'platform engineering', 'site reliability engineering'],
-      'sre': ['site reliability engineering'],
-    };
-    Object.entries(aliasMap).forEach(([key, values]) => {
-      const normalizedKey = normalizeSkillName(key);
-      const normalizedValues = values.map((item) => normalizeSkillName(item));
-      if (normalized === normalizedKey || normalizedValues.includes(normalized)) {
-        aliases.add(normalizedKey);
-        normalizedValues.forEach((item) => aliases.add(item));
-      }
-    });
-    return aliases;
-  };
-  const skillsAreSimilar = (left: string, right: string) => {
-    const leftNormalized = normalizeSkillName(left);
-    const rightNormalized = normalizeSkillName(right);
-    if (!leftNormalized || !rightNormalized) return false;
-    if (leftNormalized === rightNormalized) return true;
-
-    const leftAliases = getSkillAliases(leftNormalized);
-    const rightAliases = getSkillAliases(rightNormalized);
-    for (const alias of leftAliases) {
-      if (rightAliases.has(alias)) return true;
-    }
-
-    if (leftNormalized.includes(rightNormalized) || rightNormalized.includes(leftNormalized)) {
-      return true;
-    }
-
-    const leftTokens = new Set(leftNormalized.split(/\s+/).filter((token) => token.length > 2));
-    const rightTokens = new Set(rightNormalized.split(/\s+/).filter((token) => token.length > 2));
-    const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
-    return overlap > 0 && overlap / Math.max(leftTokens.size, rightTokens.size) >= 0.5;
-  };
-  const resumeSkillMap = useMemo(() => {
-    const entries = resumeSkills.map((skill) => [
-      normalizeSkillName(skill.name),
-      skill,
-    ]);
-    return new Map(entries);
-  }, [resumeSkills]);
-  const matchedDemandSkills = useMemo(
-    () =>
-      highDemandSkills.filter((skill) =>
-        resumeSkills.some((resumeSkill) => skillsAreSimilar(skill.name, resumeSkill.name))
-      ),
-    [highDemandSkills, resumeSkills]
-  );
-  const gapDemandSkills = useMemo(
-    () =>
-      highDemandSkills.filter(
-        (skill) => !resumeSkills.some((resumeSkill) => skillsAreSimilar(skill.name, resumeSkill.name))
-      ),
-    [highDemandSkills, resumeSkills]
-  );
-  const demandToResumeMatchMap = useMemo(() => {
-    const entries = highDemandSkills.map((skill) => {
-      const match = resumeSkills.find((resumeSkill) =>
-        skillsAreSimilar(skill.name, resumeSkill.name)
-      );
-      return [normalizeSkillName(skill.name), match] as const;
-    });
-    return new Map(entries);
-  }, [highDemandSkills, resumeSkills]);
-  const matchedDemandDetails = useMemo(() => {
-    return matchedDemandSkills
-      .map((skill) => {
-        const resumeSkill =
-          demandToResumeMatchMap.get(normalizeSkillName(skill.name)) ||
-          resumeSkillMap.get(normalizeSkillName(skill.name));
-        return resumeSkill
-          ? { name: skill.name, years: resumeSkill.years, evidence: resumeSkill.evidence }
-          : null;
-      })
-      .filter(Boolean) as Array<{ name: string; years: number; evidence: string }>;
-  }, [demandToResumeMatchMap, matchedDemandSkills, resumeSkillMap]);
-  const inferredFitDetails = useMemo(() => {
-    return resumeSkills
-      .slice(0, 5)
-      .map((skill) => ({
-        name: skill.name,
-        years: skill.years,
-        evidence: skill.evidence,
-      }));
-  }, [resumeSkills]);
-  const parsedYearsExperience = Number.parseInt(
-    (mergedProfile.yearsExperience || '').match(/\d+/)?.[0] || '0',
-    10
-  );
-  const aegisHighDemandExperience = useMemo(() => {
-    const estimatedYears = Math.max(1, Math.min(8, parsedYearsExperience || 2));
-    return highDemandSkills.slice(0, 6).map((skill) => {
-      const resumeSkill =
-        demandToResumeMatchMap.get(normalizeSkillName(skill.name)) ||
-        resumeSkillMap.get(normalizeSkillName(skill.name));
-      return {
-        name: skill.name,
-        years: resumeSkill?.years ?? estimatedYears,
-        evidence:
-          resumeSkill?.evidence ||
-          `Estimated from ${mergedProfile.yearsExperience || 'overall profile experience'} with Aegis high-demand ranking.`,
-        source: resumeSkill ? 'resume' : 'aegis-estimated',
-      };
-    });
-  }, [
-    demandToResumeMatchMap,
-    highDemandSkills,
-    mergedProfile.yearsExperience,
-    parsedYearsExperience,
-    resumeSkillMap,
-  ]);
-
-  const aegisHandoffDetails = aegisHighDemandExperience.length
-    ? aegisHighDemandExperience
-    : matchedDemandDetails.length
-      ? matchedDemandDetails
-      : inferredFitDetails;
-  const fitStandoutDetails = matchedDemandDetails.length
-    ? matchedDemandDetails
-    : inferredFitDetails;
-  const fitCoveragePct = highDemandSkills.length
-    ? Math.round((matchedDemandSkills.length / highDemandSkills.length) * 100)
-    : fitStandoutDetails.length
-      ? 60
-      : 0;
-  const fitInferenceNote =
-    matchedDemandDetails.length === 0 && fitStandoutDetails.length > 0
-      ? 'No exact demand-skill match was found, so this fit is inferred from your resume skills and experience.'
-      : '';
-
-  const sentinelWaitingOnAegis =
-    aiReportLoading && !analysisCompletedAgents.includes('skills');
-  const nexusAnalysisInProgress =
-    aiReportLoading && !analysisCompletedAgents.includes('network');
-
-  const fitSynopsis = useMemo(() => {
-    const tone = fitCoveragePct >= 70 ? 'Strong' : fitCoveragePct >= 40 ? 'Developing' : 'Early';
-    const hasExactDemandMatch = matchedDemandDetails.length > 0;
-    const leadSkill =
-      (hasExactDemandMatch
-        ? matchedDemandDetails[0]?.name
-        : inferredFitDetails[0]?.name || fitStandoutDetails[0]?.name) ||
-      'core role skills';
-    const topGap =
-      gapDemandSkills.find((skill) => skill.name !== leadSkill)?.name ||
-      gapDemandSkills[0]?.name ||
-      'advanced specialization';
-
-    if (!hasExactDemandMatch) {
-      return `${tone} global fit: Your strongest signal is ${leadSkill}, based on inferred resume evidence. To strengthen international competitiveness, prioritize ${topGap}.`;
-    }
-
-    return `${tone} global fit: You align best through ${leadSkill}. To strengthen international competitiveness, prioritize ${topGap}.`;
-  }, [fitCoveragePct, fitStandoutDetails, gapDemandSkills, inferredFitDetails, matchedDemandDetails]);
-  const derivedCertifications = useMemo(() => {
-    const fromProfile = (mergedProfile.certifications || '')
-      .split(/[,;\n•]/)
-      .map((value) => value.trim())
-      .filter(Boolean);
-    const fromResumeText = resumeText
-      .split(/\n+/)
-      .map((line) => line.trim())
-      .filter(
-        (line) =>
-          /certif|certificate|certified|license|licen[cs]e|pmp|cissp|itil|six sigma|aws|azure|google cloud/i.test(
-            line
-          )
-      )
-      .slice(0, 6);
-    return [...new Set([...fromProfile, ...fromResumeText])];
-  }, [mergedProfile.certifications, resumeText]);
-
-  const missingResumeSignals = useMemo(() => {
-    const missing: string[] = [];
-    if (!mergedProfile.currentRole?.trim()) missing.push('Current role');
-    if (!mergedProfile.yearsExperience?.trim()) missing.push('Years of experience');
-    if (!mergedProfile.education?.trim()) missing.push('Education');
-    if (!derivedCertifications.length) missing.push('Certifications');
-    if (resumeSkills.length === 0) missing.push('Skills list');
-    return missing;
-  }, [mergedProfile, resumeSkills.length, derivedCertifications.length]);
-  const marketScopes = useMemo(() => {
-    const scopes = [
-      {
-        key: 'international',
-        label: 'International',
-        enabled: profile.openToInternational,
-        subtitle: 'Global demand signals and cross-border opportunities.',
-      },
-      {
-        key: 'national',
-        label: 'National',
-        enabled: true,
-        subtitle: 'Country-wide trends and hiring momentum.',
-      },
-      {
-        key: 'regional',
-        label: 'Regional',
-        enabled: true,
-        subtitle: `Regional focus near ${mergedProfile.location || 'your area'}.`,
-      },
-      {
-        key: 'local',
-        label: 'Local',
-        enabled: true,
-        subtitle: `Local demand around ${mergedProfile.location || 'your city'}.`,
-      },
-    ];
-    return scopes.filter((scope) => scope.enabled);
-  }, [profile.openToInternational, mergedProfile.location]);
-
-  const locationParts = useMemo(() => {
-    const raw = mergedProfile.location || '';
-    const parts = raw
-      .split(',')
-      .map((value) => value.trim())
-      .filter(Boolean);
-    return {
-      city: parts[0] || 'your city',
-      region: parts[1] || parts[0] || 'your region',
-      country: parts[parts.length - 1] || 'your country',
-    };
-  }, [mergedProfile.location]);
-
-  const internationalCountryByIndustry: Record<string, string[]> = {
-    finance: ['Singapore', 'United Kingdom', 'United Arab Emirates'],
-    healthcare: ['Switzerland', 'Germany', 'United States'],
-    software: ['United States', 'Canada', 'Ireland'],
-    cybersecurity: ['Israel', 'United States', 'Estonia'],
-    manufacturing: ['Germany', 'Japan', 'South Korea'],
-    logistics: ['Netherlands', 'Singapore', 'United Arab Emirates'],
-    energy: ['Norway', 'United Arab Emirates', 'United States'],
-  };
-
-  const inferInternationalMarkets = (industries: string[]) => {
-    const matched = industries.flatMap((industry) => {
-      const normalized = industry.toLowerCase();
-      const hit = Object.entries(internationalCountryByIndustry).find(([key]) =>
-        normalized.includes(key)
-      );
-      return hit ? hit[1].map((country) => ({ country, industry })) : [];
-    });
-    if (matched.length) return matched.slice(0, 4);
-    return [
-      { country: 'United States', industry: demandIndustries[0] || 'Technology' },
-      { country: 'Germany', industry: demandIndustries[1] || 'Manufacturing' },
-      { country: 'Singapore', industry: demandIndustries[2] || 'Finance' },
-    ];
-  };
-
-  const competitivenessOutlook = useMemo(() => {
-    const valueScore = topValuableSkills.length
-      ? Math.round(
-          topValuableSkills.reduce((sum, skill) => sum + skill.marketValueScore, 0) /
-            topValuableSkills.length
-        )
-      : 50;
-    const matchPct = fitCoveragePct;
-    const riskPenalty = Math.min(highRiskCount * 4, 20);
-    const score = Math.max(5, Math.min(95, Math.round((valueScore + matchPct) / 2 - riskPenalty)));
-    return {
-      score,
-      status: score >= 70 ? 'Positive' : score >= 45 ? 'Neutral' : 'Negative',
-      color: score >= 70 ? '#37d67a' : score >= 45 ? '#f6c343' : '#ff6b6b',
-    };
-  }, [topValuableSkills, fitCoveragePct, highRiskCount]);
-
-  const locationDemandCards = useMemo(() => {
-    const baseIndustries = demandIndustries.length
-      ? demandIndustries
-      : ['Technology', 'Finance', 'Healthcare'];
-    const topSkills = highDemandSkills.map((skill) => skill.name).slice(0, 6);
-    const standoutSkills = fitStandoutDetails.slice(0, 3).map((skill) => skill.name);
-    const internationalMarkets = inferInternationalMarkets(baseIndustries);
-    const cards = marketScopes.map((scope, index) => {
-      const hiringDelta = Math.max(-12, Math.min(18, fitCoveragePct - 45 + index * 3));
-      const trendArrow = hiringDelta > 2 ? '↗' : hiringDelta < -2 ? '↘' : '→';
-      const trendLabel = hiringDelta > 2 ? 'Growing' : hiringDelta < -2 ? 'Shrinking' : 'Stagnant';
-      const trendColor = hiringDelta > 2 ? '#37d67a' : hiringDelta < -2 ? '#ff6b6b' : '#f6c343';
-      const outlookStatus = competitivenessOutlook.status;
-      const fitLevel =
-        fitCoveragePct >= 70 ? 'High fit' : fitCoveragePct >= 45 ? 'Moderate fit' : 'Needs work';
-      const locationLabel =
-        scope.key === 'international'
-          ? 'Global mobility markets'
-          : scope.key === 'national'
-            ? locationParts.country
-            : scope.key === 'regional'
-              ? locationParts.region
-              : locationParts.city;
-      const industries =
-        scope.key === 'international'
-          ? internationalMarkets.map((item) => `${item.country} · ${item.industry}`)
-          : baseIndustries;
-      return {
-        ...scope,
-        locationLabel,
-        industries,
-        topSkills,
-        standoutSkills,
-        fitLevel,
-        hiringDelta,
-        trendArrow,
-        trendLabel,
-        trendColor,
-        outlookStatus,
-        outlookColor: competitivenessOutlook.color,
-      };
-    });
-    return cards;
-  }, [
-    demandIndustries,
-    highDemandSkills,
-    fitStandoutDetails,
-    marketScopes,
-    fitCoveragePct,
-    locationParts,
-    competitivenessOutlook,
-  ]);
 
   const getRiskTone = (risk: string) => {
     const normalized = risk.toLowerCase();
@@ -787,54 +299,24 @@ export default function App() {
     return 'low';
   };
 
-  const analysisScreenDefinitions: Array<{ id: AnalysisScreenId; label: string; contentReady: boolean }> = [
-    { id: 'market', label: 'Market Conditions', contentReady: resumeReady },
-    { id: 'skills', label: 'Skills Analysis', contentReady: resumeReady },
-    { id: 'career', label: 'Career Paths', contentReady: resumeReady },
-    { id: 'ats', label: 'ATS Analysis', contentReady: resumeReady },
-    { id: 'network', label: 'Network Analysis', contentReady: linkedInReady },
-  ];
-  const analysisReadyByScreen = new Map(
-    analysisScreenDefinitions.map((screen) => {
-      const agentReady =
-        hasAiReport &&
-        !aiReportLoading &&
-        (analysisCompletedAgents.includes(screen.id) || aiReportStatus === 'AI analysis ready.');
-      return [
-        screen.id,
-        {
-          ...screen,
-          agentReady,
-          isReady: screen.contentReady && agentReady,
-        },
-      ];
-    })
-  );
-
   const navItems = [
-    { id: 'home', label: 'Main', visible: true, enabled: true },
-    { id: 'resume', label: 'Resume Upload', visible: true, enabled: true },
-    { id: 'linkedin', label: 'LinkedIn Upload', visible: true, enabled: true },
-    ...analysisScreenDefinitions.map((screen) => ({
-      id: screen.id,
-      label: screen.label,
-      visible: true,
-      enabled: analysisReadyByScreen.get(screen.id)?.isReady ?? false,
-      status: (analysisReadyByScreen.get(screen.id)?.isReady ? 'Ready' : 'Pending') as
-        | 'Ready'
-        | 'Pending',
-    })),
-    { id: 'agent-chat', label: 'Agent Console', visible: true, enabled: true },
+    { id: 'home', label: 'Main', visible: true },
+    { id: 'resume', label: 'Resume Upload', visible: true },
+    { id: 'linkedin', label: 'LinkedIn Upload', visible: true },
+    { id: 'market', label: 'Market Conditions', visible: resumeReady },
+    { id: 'skills', label: 'Skills Analysis', visible: resumeReady },
+    { id: 'career', label: 'Career Paths', visible: resumeReady },
+    { id: 'ats', label: 'ATS Analysis', visible: resumeReady },
+    { id: 'network', label: 'Network Analysis', visible: linkedInReady },
+    { id: 'agent-chat', label: 'Agent Console', visible: true },
   ];
 
   useEffect(() => {
-    const selectableIds = navItems
-      .filter((item) => item.visible && item.enabled)
-      .map((item) => item.id);
-    if (!selectableIds.includes(activeCard)) {
+    const visibleIds = navItems.filter((item) => item.visible).map((item) => item.id);
+    if (!visibleIds.includes(activeCard)) {
       setActiveCard('home');
     }
-  }, [activeCard, navItems]);
+  }, [activeCard, resumeReady, linkedInReady]);
 
   const formatExpiryDate = (uploadedAt: number) =>
     new Date(uploadedAt + FILE_TTL_MS).toISOString().slice(0, 10);
@@ -843,15 +325,7 @@ export default function App() {
   const buildReportKey = () => {
     const baseText = resumeText.trim() || resumeFilePayload?.name || '';
     const stamp = resumeUploadedAt ? String(resumeUploadedAt) : '';
-    const linkedInStamp = linkedInUploadedAt ? String(linkedInUploadedAt) : '';
-    const linkedInSample = connections
-      .slice(0, 5)
-      .map((connection) =>
-        [connection.firstName, connection.lastName, connection.company, connection.connectedOn]
-          .join(':')
-      )
-      .join('|');
-    return `${baseText.slice(0, 200)}|${stamp}|${resumeSkills.length}|${connections.length}|${linkedInStamp}|${linkedInSample}`;
+    return `${baseText.slice(0, 200)}|${stamp}|${resumeSkills.length}`;
   };
 
   const missingFields = useMemo(() => {
@@ -867,6 +341,43 @@ export default function App() {
     if (!hasAiReport) missing.push('Run AI analysis');
     return missing;
   }, [profile, mergedProfile, resumeSkills, resumeText, resumeFilePayload, hasAiReport]);
+
+  const readinessScore = useMemo(() => {
+    const checks = [
+      !!resumeFileName,
+      linkedInReady,
+      hasAiReport,
+      !!mergedProfile.location.trim(),
+      resumeSkills.length > 0,
+    ];
+    const completed = checks.filter(Boolean).length;
+    return Math.round((completed / checks.length) * 100);
+  }, [resumeFileName, linkedInReady, hasAiReport, mergedProfile.location, resumeSkills.length]);
+
+  const readinessTone = readinessScore >= 80 ? 'Ready' : readinessScore >= 50 ? 'In progress' : 'Starting';
+
+  const statusIndicators = [
+    {
+      label: 'Resume',
+      state: resumeFileName ? 'Complete' : 'Needed',
+      active: !!resumeFileName,
+    },
+    {
+      label: 'LinkedIn',
+      state: linkedInReady ? 'Complete' : 'Needed',
+      active: linkedInReady,
+    },
+    {
+      label: 'AI Report',
+      state: hasAiReport ? 'Complete' : 'Needed',
+      active: hasAiReport,
+    },
+    {
+      label: 'Profile',
+      state: mergedProfile.location.trim() ? 'Complete' : 'Needed',
+      active: !!mergedProfile.location.trim(),
+    },
+  ];
 
   useEffect(() => {
     setAiResumeExtraction(null);
@@ -979,7 +490,7 @@ export default function App() {
     try {
       const parsed = await parseLinkedInWithOpenAI({
         apiKey: aiApiKey.trim(),
-        model: aiModel.trim() || 'gpt-5.2',
+        model: aiModel.trim() || 'gpt-4o',
         baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
         file: linkedInFilePayload,
       });
@@ -989,7 +500,6 @@ export default function App() {
             [
               connection.firstName,
               connection.lastName,
-              connection.url,
               connection.email,
               connection.company,
               connection.position,
@@ -998,7 +508,7 @@ export default function App() {
             ].join(',')
           )
           .join('\n');
-        const csv = `First Name,Last Name,URL,Email Address,Company,Position,Connection on,Location\n${rows}`;
+        const csv = `First Name,Last Name,Email Address,Company,Position,Connected On,Location\n${rows}`;
         setLinkedInCsv(csv);
         setLinkedInAiStatus(
           `Parsed ${parsed.connections.length} connections with AI agent.`
@@ -1238,7 +748,6 @@ export default function App() {
   }, [
     resumeText,
     resumeSkills,
-    connections,
     aiApiKey,
     aiBaseUrl,
     aiModel,
@@ -1247,7 +756,6 @@ export default function App() {
     lastAiReportKey,
     resumeFilePayload,
     resumeUploadedAt,
-    linkedInUploadedAt,
   ]);
 
   const handleAiResumeParse = async (isAuto = false) => {
@@ -1295,13 +803,13 @@ export default function App() {
         aiParserMode === 'openai'
           ? await parseResumeWithOpenAI({
               apiKey: aiApiKey.trim(),
-              model: aiModel.trim() || 'gpt-5.2',
+              model: aiModel.trim() || 'gpt-4o',
               baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
               resumeText,
               file: resumeFilePayload || undefined,
             })
           : await parseResumeWithServerless({
-              model: aiModel.trim() || 'gpt-5.2',
+              model: aiModel.trim() || 'gpt-4o',
               baseUrl: aiBaseUrl.trim(),
               resumeText,
               file: resumeFilePayload || undefined,
@@ -1353,31 +861,15 @@ export default function App() {
 
     setAiReportStatus('Running AI analysis agents...');
     setAiReportLoading(true);
-    setAnalysisCompletedAgents([]);
     try {
       const analysis = await parseCipherReportWithOpenAI({
         apiKey: aiApiKey.trim(),
-        model: aiModel.trim() || 'gpt-5.2',
+        model: aiModel.trim() || 'gpt-4o',
         baseUrl: aiBaseUrl.trim() || 'https://api.openai.com',
         profile: mergedProfile,
         resumeText,
         skills: resumeSkills,
         connections,
-        onProgress: ({ agent, completedAgents, totalAgents, report, done }) => {
-          setAiReport(report);
-          if (agent) {
-            setAnalysisCompletedAgents((prev) =>
-              prev.includes(agent) ? prev : [...prev, agent]
-            );
-          }
-          if (done) {
-            setAiReportStatus('AI analysis ready.');
-                    return;
-          }
-          setAiReportStatus(
-            `Running AI analysis agents... (${completedAgents}/${totalAgents} complete)`
-          );
-        },
       });
       setAiReport(analysis);
       setAiReportUpdatedAt(Date.now());
@@ -1397,43 +889,17 @@ export default function App() {
   const buildAgentContext = () => {
     const trimmedResume = resumeText.trim();
     const truncatedResume =
-      trimmedResume.length > 6000
-        ? `${trimmedResume.slice(0, 6000)}
-...[truncated]`
+      trimmedResume.length > 4000
+        ? `${trimmedResume.slice(0, 4000)}\n...[truncated]`
         : trimmedResume;
-    const parsedResumeProfile = {
-      currentRole: mergedProfile.currentRole || 'Unknown',
-      yearsExperience: mergedProfile.yearsExperience || 'Unknown',
-      education: mergedProfile.education || 'Unknown',
-      certifications: mergedProfile.certifications || 'Unknown',
-      location: mergedProfile.location || 'Unknown',
-      industries: mergedProfile.industries || 'Unknown',
-    };
-    const parsedResumeSkills = resumeSkills.map((skill) => ({
-      name: skill.name,
-      category: skill.category,
-      years: skill.years,
-      evidence: skill.evidence,
-    }));
-    const linkedInConnectionSample = connections.slice(0, 40).map((connection) => ({
-      firstName: connection.firstName,
-      lastName: connection.lastName,
-      url: connection.url,
-      email: connection.email,
-      company: connection.company,
-      position: connection.position,
-      connectedOn: connection.connectedOn,
-      location: connection.location,
-    }));
-
+    const skillList = resumeSkills.length
+      ? resumeSkills.map((skill) => skill.name).join(', ')
+      : 'Not detected';
     return [
-      `Parsed resume profile: ${JSON.stringify(parsedResumeProfile, null, 2)}`,
-      `Profile (merged): ${JSON.stringify(mergedProfile, null, 2)}`,
+      `Profile: ${JSON.stringify(mergedProfile, null, 2)}`,
       `Resume text: ${truncatedResume || 'Not available'}`,
-      `Parsed resume skills: ${JSON.stringify(parsedResumeSkills, null, 2)}`,
+      `Skills: ${skillList}`,
       `LinkedIn connections: ${connections.length}`,
-      `LinkedIn connections sample: ${JSON.stringify(linkedInConnectionSample, null, 2)}`,
-      'Instruction: Use the parsed resume profile and skills above as source-of-truth context for analysis and responses across all sections.',
     ].join('\n');
   };
 
@@ -1441,7 +907,7 @@ export default function App() {
     {
       id: 'market',
       name: 'Sentinel',
-      role: 'Geographic competitiveness intelligence analyst',
+      role: 'Market conditions analyst',
       keywords: [
         /market/i,
         /hiring/i,
@@ -1451,7 +917,7 @@ export default function App() {
         /trend|outlook|inflation/i,
       ],
       prompt:
-        'Assess candidate competitiveness across international, national, regional, and local markets. Use a structured market-analysis format that includes: Global Market Overview, Candidate Competitiveness (strengths + opportunities), In-Demand Skills, Regional Competitiveness, and a concise Conclusion. Identify strongest locations and industries, quantify hiring momentum when possible, map in-demand hard/soft skills, call out standout strengths, and use recent, source-cited data.',
+        'Focus on hiring signals, compensation benchmarks, and regional trends.',
     },
     {
       id: 'skills',
@@ -1484,7 +950,7 @@ export default function App() {
   ];
 
   const sourceNote =
-    'Use public, reliable sources and cite URLs when referencing market, salary, or industry data. For Sentinel responses, prioritize a clear sectioned market brief with concrete metrics and competitiveness context.';
+    'Use public, reliable sources and cite URLs when referencing market, salary, or industry data.';
 
   const runChatAgent = async ({
     name,
@@ -1497,42 +963,27 @@ export default function App() {
     prompt: string;
     question: string;
   }) => {
-    const messages = [
-      {
-        role: 'system',
-        content: `You are ${name}, a ${role}. ${prompt} ${sourceNote}`,
+    const response = await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${aiApiKey.trim()}`,
+        'Content-Type': 'application/json',
       },
-      {
-        role: 'user',
-        content: `Context:\n${buildAgentContext()}\n\nQuestion:\n${question}`,
-      },
-    ];
-
-    const response =
-      aiParserMode === 'openai'
-        ? await fetch(`${aiBaseUrl.replace(/\/$/, '')}/v1/chat/completions`, {
-            method: 'POST',
-            headers: {
-              Authorization: `Bearer ${aiApiKey.trim()}`,
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: aiModel.trim() || 'gpt-5.2',
-              temperature: 0.35,
-              messages,
-            }),
-          })
-        : await fetch(`${aiBaseUrl.replace(/\/$/, '')}/api/agent/chat`, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              model: aiModel.trim() || 'gpt-5.2',
-              temperature: 0.35,
-              messages,
-            }),
-          });
+      body: JSON.stringify({
+        model: aiModel.trim() || 'gpt-4o',
+        temperature: 0.35,
+        messages: [
+          {
+            role: 'system',
+            content: `You are ${name}, a ${role}. ${prompt} ${sourceNote}`,
+          },
+          {
+            role: 'user',
+            content: `Context:\n${buildAgentContext()}\n\nQuestion:\n${question}`,
+          },
+        ],
+      }),
+    });
 
     if (!response.ok) {
       const errorText = await response.text();
@@ -1540,8 +991,7 @@ export default function App() {
     }
 
     const data = await response.json();
-    const reply =
-      data.reply?.trim() || data.choices?.[0]?.message?.content?.trim() || '';
+    const reply = data.choices?.[0]?.message?.content?.trim() || '';
     if (!reply) {
       throw new Error(`Agent ${name} returned empty response.`);
     }
@@ -1636,12 +1086,12 @@ export default function App() {
       setStatus('Add a question before sending.');
       return;
     }
-    if (aiParserMode === 'openai' && !aiApiKey.trim()) {
-      setStatus('Add your OpenAI API key to enable agent chat.');
+    if (aiParserMode !== 'openai') {
+      setStatus('Agent chat requires OpenAI mode. Switch to OpenAI API key.');
       return;
     }
-    if (aiParserMode === 'serverless' && !aiBaseUrl.trim()) {
-      setStatus('Add the AI parser URL to enable agent chat.');
+    if (!aiApiKey.trim()) {
+      setStatus('Add your OpenAI API key to enable agent chat.');
       return;
     }
 
@@ -1651,15 +1101,19 @@ export default function App() {
     setStatus('Coordinating agents...');
 
     try {
-      const orchestrationAgents =
-        forcedAgents && forcedAgents.length
-          ? forcedAgents
-          : [];
-      const { synthesis } = await runAgentOrchestration(
+      const { agentReplies, synthesis } = await runAgentOrchestration(
         question.trim(),
-        orchestrationAgents
+        forcedAgents || []
       );
-      setThread([...nextThread, { role: 'assistant', content: `Cipher: ${synthesis}` }]);
+      const replyMessages = agentReplies.map((reply) => ({
+        role: 'assistant' as const,
+        content: `${reply.agent.name}: ${reply.response}`,
+      }));
+      setThread([
+        ...nextThread,
+        ...replyMessages,
+        { role: 'assistant', content: `Cipher: ${synthesis}` },
+      ]);
       setStatus('');
     } catch (error) {
       setStatus(error instanceof Error ? error.message : 'Agent chat failed. Try again.');
@@ -1750,7 +1204,7 @@ export default function App() {
     },
     {
       name: 'Sentinel',
-      role: 'Competitiveness by geography',
+      role: 'Market conditions',
       status: hasAiReport ? 'Synced' : 'Waiting for AI analysis',
     },
     {
@@ -1829,26 +1283,46 @@ export default function App() {
     </View>
   );
 
-  const latestMarketInsight = [...marketThread]
-    .reverse()
-    .find((message) => message.role === 'assistant')?.content;
-  const latestMarketInsightText = latestMarketInsight
-    ? latestMarketInsight.split(':').slice(1).join(':').trim() || latestMarketInsight
-    : '';
-
   const renderActiveCard = () => {
     if (activeCard === 'home') {
       return (
         <Card
           title="Main Screen"
-          subtitle="Upload your resume and LinkedIn file to unlock the AI analysis cards."
+          subtitle="Visual command center for your career strategy across web and mobile."
         >
+          <View style={styles.heroPanel}>
+            <View style={styles.heroHeader}>
+              <Text style={styles.heroEyebrow}>Launch readiness</Text>
+              <Text style={styles.heroPercent}>{readinessScore}%</Text>
+            </View>
+            <View style={styles.heroProgressTrack}>
+              <View style={[styles.heroProgressFill, { width: `${readinessScore}%` }]} />
+            </View>
+            <View style={styles.statusIndicatorRow}>
+              {statusIndicators.map((item) => (
+                <StatusIndicator
+                  key={item.label}
+                  label={item.label}
+                  state={item.state}
+                  active={item.active}
+                />
+              ))}
+            </View>
+            <View style={styles.heroActions}>
+              <QuickActionButton label="Upload Resume" icon="📄" onPress={handleResumePick} />
+              <QuickActionButton label="Upload LinkedIn" icon="🔗" onPress={handleLinkedInPick} />
+              <QuickActionButton
+                label={aiReportLoading ? 'Running' : 'Run AI'}
+                icon="⚡"
+                onPress={() => handleAiReportGenerate(false)}
+              />
+            </View>
+            <Text style={styles.heroMeta}>Current phase: {readinessTone}</Text>
+          </View>
+
           <View style={styles.cardRow}>
             <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>Resume Upload</Text>
-              <Text style={styles.helper}>
-                Supports PDF, DOCX, DOC, or plain text.
-              </Text>
+              <Text style={styles.reportTitle}>Resume</Text>
               <Pressable style={styles.secondaryButton} onPress={handleResumePick}>
                 <Text style={styles.secondaryButtonText}>
                   {Platform.OS === 'web' ? 'Upload resume (web)' : 'Pick resume file'}
@@ -1865,8 +1339,7 @@ export default function App() {
               {resumeStatus ? <Text style={styles.helper}>{resumeStatus}</Text> : null}
             </View>
             <View style={styles.reportCard}>
-              <Text style={styles.reportTitle}>LinkedIn Upload</Text>
-              <Text style={styles.helper}>Upload any LinkedIn export format.</Text>
+              <Text style={styles.reportTitle}>LinkedIn</Text>
               <Pressable style={styles.secondaryButton} onPress={handleLinkedInPick}>
                 <Text style={styles.secondaryButtonText}>
                   {Platform.OS === 'web' ? 'Upload LinkedIn file' : 'Pick LinkedIn file'}
@@ -1889,12 +1362,13 @@ export default function App() {
             </View>
           </View>
 
-          <Text style={styles.label}>AI analysis</Text>
-          <Pressable style={styles.primaryButton} onPress={() => handleAiReportGenerate(false)}>
-            <Text style={styles.primaryButtonText}>
-              {aiReportLoading ? 'Running AI analysis...' : 'Run AI analysis'}
-            </Text>
-          </Pressable>
+          <View style={styles.compactButtonRow}>
+            <Pressable style={styles.primaryButton} onPress={() => handleAiReportGenerate(false)}>
+              <Text style={styles.primaryButtonText}>
+                {aiReportLoading ? 'Running AI analysis...' : 'Run AI analysis'}
+              </Text>
+            </Pressable>
+          </View>
           {aiReportUpdatedAt ? (
             <Text style={styles.helper}>
               Last updated {formatTimestamp(aiReportUpdatedAt)}.
@@ -1932,27 +1406,6 @@ export default function App() {
                   : 'Run AI analysis'
               }
             />
-          </View>
-
-          <Text style={styles.label}>Screen readiness</Text>
-          <View style={styles.dashboardGrid}>
-            {analysisScreenDefinitions.map((screen) => {
-              const readiness = analysisReadyByScreen.get(screen.id);
-              return (
-                <DashboardCard
-                  key={`screen-${screen.id}`}
-                  label={screen.label}
-                  value={readiness?.isReady ? 'Ready' : 'Pending'}
-                  meta={
-                    readiness?.contentReady
-                      ? readiness?.agentReady
-                        ? 'Content and agent analysis complete'
-                        : 'Waiting for AI agent analysis'
-                      : 'Waiting for content upload'
-                  }
-                />
-              );
-            })}
           </View>
 
           <Text style={styles.label}>KPI tiles</Text>
@@ -2083,7 +1536,7 @@ export default function App() {
               label="Model"
               value={aiModel}
               onChangeText={setAiModel}
-              placeholder="gpt-5.2"
+              placeholder="gpt-4o"
             />
             <Field
               label={aiParserMode === 'openai' ? 'OpenAI base URL' : 'AI parser URL'}
@@ -2294,158 +1747,10 @@ export default function App() {
       return (
         <Card
           title="Market Conditions"
-          subtitle="Sentinel compares your competitiveness across international, national, regional, and local demand signals."
+          subtitle="AI market agent builds this from public sources and your location."
         >
-          <CollapsibleCard title="Sentinel competitiveness dashboard" defaultCollapsed={false}>
-            {sentinelWaitingOnAegis ? (
-              <View style={styles.marketWaitingBanner}>
-                <Text style={styles.marketWaitingText}>⏳ Sentinel is waiting on Aegis skills data to finalize competitiveness fit and regional demand alignment.</Text>
-              </View>
-            ) : null}
-            <View style={styles.marketGlobalSynopsisCard}>
-              <View style={styles.marketSignalRow}>
-                <Text style={styles.marketSignalText}>🌍 Overall market competitiveness</Text>
-                <Text style={styles.marketSignalText}>{competitivenessOutlook.score}/100</Text>
-              </View>
-              <View style={styles.metricBar}>
-                <View
-                  style={[
-                    styles.metricBarFill,
-                    {
-                      width: `${Math.min(100, competitivenessOutlook.score)}%`,
-                      backgroundColor: competitivenessOutlook.color,
-                    },
-                  ]}
-                />
-              </View>
-              <Text style={styles.marketSynopsisText}>{fitSynopsis}</Text>
-              <Text style={styles.marketInferenceText}>
-                Outlook: <Text style={{ color: competitivenessOutlook.color }}>{competitivenessOutlook.status}</Text> •
-                Coverage fit {fitCoveragePct}% • Top standout skills: {fitStandoutDetails.slice(0, 3).map((skill) => skill.name).join(', ') || 'Add skills to detect standouts'}
-              </Text>
-              <Text style={styles.marketInferenceText}>
-                Aegis handoff (high-demand skills + experience): {aegisHandoffDetails
-                  .slice(0, 3)
-                  .map((skill) => `${skill.name} (${skill.years}y)`)
-                  .join(', ') || 'Waiting for Aegis handoff'}
-              </Text>
-              {fitInferenceNote ? (
-                <Text style={styles.marketInferenceText}>🧠 {fitInferenceNote}</Text>
-              ) : null}
-              <Text style={styles.marketInferenceText}>
-                🔗 How these work together: Sentinel computes competitiveness using market demand coverage, while Aegis handoff contributes your strongest high-demand skills and estimated experience context.
-              </Text>
-            </View>
-
-            <View style={styles.marketScopeGrid}>
-              {locationDemandCards.map((scope) => (
-                <View key={scope.key} style={styles.marketScopeCard}>
-                  <View style={styles.marketSignalRow}>
-                    <Text style={styles.marketScopeTitle}>🌐 {scope.label}</Text>
-                    <View style={[styles.marketPill, { borderColor: scope.outlookColor }]}>
-                      <View style={[styles.marketPillDot, { backgroundColor: scope.outlookColor }]} />
-                      <Text style={styles.marketPillText}>{scope.outlookStatus}</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.marketScopeSubtitle}>{scope.subtitle}</Text>
-                  <Text style={styles.marketScopeText}>📍 Demand location: {scope.locationLabel}</Text>
-
-                  <View style={styles.marketTrendRow}>
-                    <Text style={[styles.marketTrendArrow, { color: scope.trendColor }]}>{scope.trendArrow}</Text>
-                    <View>
-                      <Text style={styles.marketSignalText}>{scope.trendLabel}</Text>
-                      <Text style={styles.marketScopeSubtitle}>
-                        Hiring momentum: {scope.hiringDelta >= 0 ? '+' : ''}{scope.hiringDelta}% (recent hiring signal)
-                      </Text>
-                    </View>
-                  </View>
-
-                  <Text style={styles.marketFitLabel}>
-                    {scope.key === 'international'
-                      ? '🌎 Countries and high-demand industries'
-                      : '🏢 High-demand industries'}
-                  </Text>
-                  <View style={styles.marketChipRow}>
-                    {scope.industries.slice(0, 5).map((industry) => (
-                      <View key={`${scope.key}-industry-${industry}`} style={styles.marketChip}>
-                        <Text style={styles.marketChipText}>{industry}</Text>
-                      </View>
-                    ))}
-                  </View>
-
-                  <Text style={styles.marketFitLabel}>🛠 In-demand hard + soft skills</Text>
-                  <View style={styles.marketChipRow}>
-                    {scope.topSkills.length ? (
-                      scope.topSkills.map((skill) => (
-                        <View key={`${scope.key}-${skill}`} style={styles.marketChip}>
-                          <Text style={styles.marketChipText}>{skill}</Text>
-                        </View>
-                      ))
-                    ) : (
-                      <Text style={styles.helper}>Run AI analysis to identify in-demand skills.</Text>
-                    )}
-                  </View>
-
-                  <Text style={styles.marketFitLabel}>⭐ Why you stand out in this market</Text>
-                  {scope.standoutSkills.length ? (
-                    <View style={styles.marketChipRow}>
-                      {scope.standoutSkills.map((skill) => (
-                        <View key={`${scope.key}-standout-${skill}`} style={styles.marketChipStrong}>
-                          <Text style={styles.marketChipText}>{skill}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.helper}>
-                      Add quantified project outcomes and certifications to increase standout signals.
-                    </Text>
-                  )}
-
-                  <View style={styles.marketGapBanner}>
-                    <Text style={styles.marketGapTitle}>🎯 Competitiveness fit</Text>
-                    <Text style={styles.marketGapText}>{scope.fitLevel} for this geography.</Text>
-                    {gapDemandSkills.length ? (
-                      <Text style={styles.marketGapText}>
-                        Priority gaps: {gapDemandSkills.slice(0, 3).map((skill) => skill.name).join(', ')}
-                      </Text>
-                    ) : (
-                      <Text style={styles.marketGapText}>
-                        Strong match with active demand. Keep adding recent, measurable achievements.
-                      </Text>
-                    )}
-                  </View>
-                </View>
-              ))}
-            </View>
-
-            {missingResumeSignals.length ? (
-              <Text style={styles.marketInferenceText}>
-                📝 Missing resume details reducing precision: {missingResumeSignals.join(', ')}
-              </Text>
-            ) : null}
-          </CollapsibleCard>
-          <CollapsibleCard title="Explore demand opportunities">
-            <View style={styles.marketExploreCard}>
-              <Text style={styles.marketExploreText}>
-                Use the Skills Analysis page to explore how to build missing skills and
-                prioritize the sectors above. We’ll map learning resources, projects, and
-                milestones to close your gaps.
-              </Text>
-              <Pressable
-                style={styles.primaryButton}
-                onPress={() => setActiveCard('skills')}
-              >
-                <Text style={styles.primaryButtonText}>Explore skills plan</Text>
-              </Pressable>
-            </View>
-          </CollapsibleCard>
-          {latestMarketInsightText ? (
-            <CollapsibleCard title="Latest Sentinel market analysis" defaultCollapsed={false}>
-              <Text style={styles.chatText}>{latestMarketInsightText}</Text>
-            </CollapsibleCard>
-          ) : null}
           <CollapsibleCard title={report.marketSnapshot.title} defaultCollapsed={false}>
-            <GraphicSectionBody section={report.marketSnapshot} highlightMarket />
+            <GraphicSectionBody section={report.marketSnapshot} />
             {!hasAiReport ? (
               <Text style={styles.helper}>
                 Run AI analysis to generate market conditions and citations.
@@ -2453,22 +1758,13 @@ export default function App() {
             ) : null}
           </CollapsibleCard>
           <CollapsibleCard title={report.marketOutlook.title}>
-            <GraphicSectionBody section={report.marketOutlook} highlightMarket />
-            {report.internationalPlan ? (
-              <Text style={styles.helper}>
-                International opportunities are summarized in the International Opportunities section
-                below.
-              </Text>
-            ) : null}
+            <GraphicSectionBody section={report.marketOutlook} />
           </CollapsibleCard>
           <CollapsibleCard title={report.geographicOptions.title}>
             <GraphicSectionBody section={report.geographicOptions} />
           </CollapsibleCard>
           {report.internationalPlan ? (
-            <CollapsibleCard
-              title="International Opportunities"
-              defaultCollapsed={!profile.openToInternational}
-            >
+            <CollapsibleCard title={report.internationalPlan.title}>
               <GraphicSectionBody section={report.internationalPlan} />
             </CollapsibleCard>
           ) : null}
@@ -2481,7 +1777,7 @@ export default function App() {
             status: marketChatStatus,
             thread: marketThread,
             buttonLabel: 'Ask Sentinel',
-            placeholder: 'Ask where demand is strongest, which industries are hiring, and why you stand out.',
+            placeholder: 'Ask about hiring signals, layoffs, or salary trends.',
           })}
         </Card>
       );
@@ -2589,10 +1885,10 @@ export default function App() {
       return (
         <Card title="Career Paths" subtitle="Traditional, alternate, and moonshot plans.">
           <CollapsibleCard title={report.aiForward.title} defaultCollapsed={false}>
-            <ReportSectionBody section={report.aiForward} showSignal />
+            <ReportSectionBody section={report.aiForward} />
           </CollapsibleCard>
           <CollapsibleCard title={report.careerInsights.title}>
-            <ReportSectionBody section={report.careerInsights} showSignal />
+            <ReportSectionBody section={report.careerInsights} />
           </CollapsibleCard>
           <CollapsibleCard title="Career Path Options" defaultCollapsed={false}>
             {report.careerPaths.map((path, index) => (
@@ -2858,132 +2154,84 @@ export default function App() {
     if (activeCard === 'network') {
       return (
         <Card title="Network Analysis" subtitle="LinkedIn connections and outreach plan.">
-          {nexusAnalysisInProgress ? (
-            <View style={styles.analysisStatusBanner}>
-              <ActivityIndicator size="small" color="#22d3ee" />
-              <Text style={styles.analysisStatusText}>
-                Nexus network analysis is still in process...
-              </Text>
-            </View>
-          ) : null}
-          {networkReportForDisplay ? (
+          {report.networkReport ? (
             <CollapsibleCard title="LinkedIn Network Analysis" defaultCollapsed={false}>
               <Text style={styles.reportText}>
-                Total connections: {networkReportForDisplay.totalConnections}
+                Total connections: {report.networkReport.totalConnections}
               </Text>
-              <Text style={styles.reportSubheading}>Title / level breakdown</Text>
-              {(networkReportForDisplay.titleBreakdown || []).map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
               <Text style={styles.reportSubheading}>Industry breakdown</Text>
-              {(networkReportForDisplay.industryBreakdown || []).map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Connection type breakdown</Text>
-              {(networkReportForDisplay.connectionTypeBreakdown || []).map((item) => (
+              {report.networkReport.industryBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Seniority breakdown</Text>
-              {(networkReportForDisplay.seniorityBreakdown || []).map((item) => (
+              {report.networkReport.seniorityBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Company breakdown</Text>
-              {(networkReportForDisplay.companyBreakdown || []).map((item) => (
+              {report.networkReport.companyBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Geography</Text>
-              {(networkReportForDisplay.geographyBreakdown || []).map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Career path alignment (Atlas-informed)</Text>
-              {(networkReportForDisplay.careerPathAlignment || []).map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Best-practice network configuration insights</Text>
-              {(networkReportForDisplay.bestConfigurationInsights || []).map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Connections that match target roles</Text>
-              {(networkReportForDisplay.roleMatches || []).map((item) => (
-                <Text key={item} style={styles.reportBullet}>
-                  - {item}
-                </Text>
-              ))}
-              <Text style={styles.reportSubheading}>Strategy to make connections more useful</Text>
-              {(networkReportForDisplay.connectionUtilityStrategy || []).map((item) => (
+              {report.networkReport.geographyBreakdown.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Hiring managers</Text>
-              {(networkReportForDisplay.hiringManagers || []).map((item) => (
+              {report.networkReport.hiringManagers.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Recruiters</Text>
-              {(networkReportForDisplay.recruiters || []).map((item) => (
+              {report.networkReport.recruiters.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Warm introduction paths</Text>
-              {(networkReportForDisplay.warmIntroductions || []).map((item) => (
+              {report.networkReport.warmIntroductions.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Priority order</Text>
-              {(networkReportForDisplay.priorityOrder || []).map((item) => (
+              {report.networkReport.priorityOrder.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Outreach templates</Text>
-              {(networkReportForDisplay.outreachTemplates || []).map((item) => (
+              {report.networkReport.outreachTemplates.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>What to ask for</Text>
-              {(networkReportForDisplay.whatToAsk || []).map((item) => (
+              {report.networkReport.whatToAsk.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Network gaps</Text>
-              {(networkReportForDisplay.gaps || []).map((item) => (
+              {report.networkReport.gaps.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
               <Text style={styles.reportSubheading}>Networking action plan</Text>
-              {(networkReportForDisplay.actionPlan || []).map((item) => (
+              {report.networkReport.actionPlan.map((item) => (
                 <Text key={item} style={styles.reportBullet}>
                   - {item}
                 </Text>
               ))}
             </CollapsibleCard>
-          ) : analysisCompletedAgents.includes('network') ? (
-            <Text style={styles.helper}>
-              Nexus completed network analysis, but no network data is available yet.
-            </Text>
           ) : (
             <Text style={styles.helper}>
               Run AI analysis to generate network insights.
@@ -3078,7 +2326,7 @@ const NavRail = ({
   onSelect,
 }: {
   isCompact: boolean;
-  items: Array<{ id: string; label: string; enabled?: boolean; status?: 'Ready' | 'Pending' }>;
+  items: Array<{ id: string; label: string }>;
   activeId: string;
   onSelect: (sectionId: string) => void;
 }) => (
@@ -3089,28 +2337,18 @@ const NavRail = ({
         key={item.id}
         style={[
           styles.navButton,
-          item.enabled === false ? styles.navButtonDisabled : null,
           activeId === item.id ? styles.navButtonActive : null,
         ]}
-        onPress={() => {
-          if (item.enabled === false) return;
-          onSelect(item.id);
-        }}
+        onPress={() => onSelect(item.id)}
       >
         <Text
           style={[
             styles.navButtonText,
-            item.enabled === false ? styles.navButtonTextDisabled : null,
             activeId === item.id ? styles.navButtonTextActive : null,
           ]}
         >
           {item.label}
         </Text>
-        {item.status ? (
-          <Text style={item.status === 'Ready' ? styles.navStatusReady : styles.navStatusPending}>
-            {item.status}
-          </Text>
-        ) : null}
       </Pressable>
     ))}
   </View>
@@ -3202,68 +2440,44 @@ const DashboardCard = ({
   </View>
 );
 
-const trendConfig = {
-  up: { label: 'Up', icon: '↑' },
-  down: { label: 'Down', icon: '↓' },
-  neutral: { label: 'Flat', icon: '→' },
-};
+const StatusIndicator = ({
+  label,
+  state,
+  active,
+}: {
+  label: string;
+  state: string;
+  active: boolean;
+}) => (
+  <View style={[styles.statusIndicator, active ? styles.statusIndicatorActive : null]}>
+    <View style={[styles.statusDot, active ? styles.statusDotActive : null]} />
+    <Text style={styles.statusLabel}>{label}</Text>
+    <Text style={styles.statusState}>{state}</Text>
+  </View>
+);
 
-const getSignalFromText = (value: string) => {
-  const lowered = value.toLowerCase();
-  const hasPositive = /\b(strong|good|high|growing|increase|rising|up)\b/i.test(lowered);
-  const hasNegative = /\b(weak|bad|low|decline|decrease|falling|down)\b/i.test(lowered);
-  let tone: 'positive' | 'negative' | 'neutral' = 'neutral';
-  if (hasPositive && !hasNegative) tone = 'positive';
-  if (hasNegative && !hasPositive) tone = 'negative';
-
-  const trend =
-    /\b(rise|rising|increase|up|accelerat)\b/i.test(lowered)
-      ? 'up'
-      : /\b(fall|falling|decrease|down|slow)\b/i.test(lowered)
-        ? 'down'
-        : 'neutral';
-
-  return { tone, trend };
-};
-
-const SignalRow = ({ text }: { text: string }) => {
-  const signal = getSignalFromText(text);
-  return (
-    <View style={styles.signalRow}>
-      <View
-        style={[
-          styles.signalDot,
-          signal.tone === 'positive'
-            ? styles.signalDotPositive
-            : signal.tone === 'negative'
-              ? styles.signalDotNegative
-              : styles.signalDotNeutral,
-        ]}
-      />
-      <Text style={styles.signalLabel}>
-        {signal.tone === 'positive'
-          ? 'Good'
-          : signal.tone === 'negative'
-            ? 'Bad'
-            : 'Mixed'}
-      </Text>
-      <View style={styles.signalDivider} />
-      <Text style={styles.signalTrendIcon}>{trendConfig[signal.trend].icon}</Text>
-      <Text style={styles.signalTrendLabel}>{trendConfig[signal.trend].label} trend</Text>
-    </View>
-  );
-};
+const QuickActionButton = ({
+  label,
+  icon,
+  onPress,
+}: {
+  label: string;
+  icon: string;
+  onPress: () => void;
+}) => (
+  <Pressable style={styles.quickActionButton} onPress={onPress}>
+    <Text style={styles.quickActionIcon}>{icon}</Text>
+    <Text style={styles.quickActionText}>{label}</Text>
+  </Pressable>
+);
 
 const ReportSectionBody = ({
   section,
-  showSignal = false,
 }: {
   section: { title: string; summary: string; bullets?: string[] };
-  showSignal?: boolean;
 }) => (
   <View style={styles.reportDigest}>
     <Text style={styles.reportDigestLabel}>Key takeaway</Text>
-    {showSignal ? <SignalRow text={section.summary} /> : null}
     <Text style={styles.reportDigestText} numberOfLines={3}>
       {section.summary}
     </Text>
@@ -3283,126 +2497,28 @@ const ReportSectionBody = ({
 
 const GraphicSectionBody = ({
   section,
-  highlightMarket = false,
 }: {
   section: { title: string; summary: string; bullets?: string[] };
-  highlightMarket?: boolean;
-}) => {
-  const bullets = section.bullets ?? [];
-  const highlightRules = highlightMarket
-    ? [
-        { key: 'salary', label: 'Salary range', matcher: /(salary|compensation|pay|\$)/i },
-        { key: 'driver', label: 'Market driver', matcher: /(driver|catalyst|tailwind)/i },
-        {
-          key: 'indicators',
-          label: 'Market indicators',
-          matcher: /(indicator|signal|demand|hiring|open roles)/i,
-        },
-        {
-          key: 'stats',
-          label: 'Key statistics',
-          matcher: /(stat|stats|%|percent|rate|growth|median|average|benchmark)/i,
-        },
-      ]
-    : [];
-  const highlightMap = new Map<string, { label: string; value: string }>();
-  const remainingBullets: string[] = [];
-
-  const extractMedianSalary = (value: string) => {
-    const medianMatch = value.match(/median[^$]*(\$\s?[\d,]+(?:\.\d+)?[kKmM]?)/i);
-    if (medianMatch?.[1]) {
-      return medianMatch[1].replace(/\s+/g, ' ').trim();
-    }
-    const dollarMatches = value.match(/\$\s?[\d,]+(?:\.\d+)?[kKmM]?/g);
-    if (!dollarMatches?.length) return null;
-    const normalized = dollarMatches.map((entry) => entry.replace(/\s+/g, ' ').trim());
-    const middleIndex = Math.floor((normalized.length - 1) / 2);
-    return normalized[middleIndex];
-  };
-
-  const stripSalaryFromText = (value: string) => {
-    const withoutMedian = value.replace(/median[^$]*\$\s?[\d,]+(?:\.\d+)?[kKmM]?/gi, '').trim();
-    const withoutDollars = withoutMedian.replace(/\$\s?[\d,]+(?:\.\d+)?[kKmM]?/g, '').trim();
-    return withoutDollars.replace(/\s{2,}/g, ' ').replace(/^[-–:]+/, '').trim();
-  };
-
-  bullets.forEach((item) => {
-    const match = highlightRules.find(
-      (rule) => !highlightMap.has(rule.key) && rule.matcher.test(item)
-    );
-    if (match) {
-      highlightMap.set(match.key, { label: match.label, value: item });
-    } else {
-      remainingBullets.push(item);
-    }
-  });
-
-  return (
-    <View style={styles.graphicSection}>
-      <View style={styles.graphicSummaryCard}>
-        <Text style={styles.graphicLabel}>Summary</Text>
-        {highlightMarket ? <SignalRow text={section.summary} /> : null}
-        <Text style={styles.graphicSummaryText}>{section.summary}</Text>
-      </View>
-      {highlightMap.size ? (
-        <View style={styles.highlightGrid}>
-          {[...highlightMap.values()].map((highlight) => {
-            const isSalary = highlight.label === 'Salary range';
-            const isMarketAction =
-              highlight.label === 'Market indicators' || highlight.label === 'Market driver';
-            const medianSalary = isSalary ? extractMedianSalary(highlight.value) : null;
-            const highlightText = isSalary
-              ? stripSalaryFromText(highlight.value)
-              : highlight.value;
-            return (
-              <View key={highlight.label} style={styles.highlightCard}>
-                <Text style={styles.highlightLabel}>{highlight.label}</Text>
-                {highlightMarket ? <SignalRow text={highlight.value} /> : null}
-                {isSalary && medianSalary ? (
-                  <Text style={styles.highlightMedian}>Median salary: {medianSalary}</Text>
-                ) : null}
-                {highlightText ? (
-                  isMarketAction ? (
-                    <View style={styles.highlightActionButton}>
-                      <Text style={styles.highlightActionButtonText}>{highlightText}</Text>
-                    </View>
-                  ) : (
-                    <Text style={styles.highlightValue}>{highlightText}</Text>
-                  )
-                ) : null}
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
-      {remainingBullets.length ? (
-        <View style={styles.insightList}>
-          {remainingBullets.map((item, index) => {
-            return (
-              <View
-                key={item}
-                style={[
-                  styles.insightRow,
-                  highlightMarket ? styles.marketInsightRow : null,
-                ]}
-              >
-                {!highlightMarket ? (
-                  <View style={styles.insightBadge}>
-                    <Text style={styles.insightBadgeText}>{index + 1}</Text>
-                  </View>
-                ) : null}
-                <View style={styles.insightContent}>
-                  {highlightMarket ? <SignalRow text={item} /> : null}
-                  <Text style={styles.insightText}>{item}</Text>
-                </View>
-              </View>
-            );
-          })}
-        </View>
-      ) : null}
+}) => (
+  <View style={styles.graphicSection}>
+    <View style={styles.graphicSummaryCard}>
+      <Text style={styles.graphicLabel}>Summary</Text>
+      <Text style={styles.graphicSummaryText}>{section.summary}</Text>
     </View>
-  );
-};
+    {section.bullets?.length ? (
+      <View style={styles.insightList}>
+        {section.bullets.map((item, index) => (
+          <View key={item} style={styles.insightRow}>
+            <View style={styles.insightBadge}>
+              <Text style={styles.insightBadgeText}>{index + 1}</Text>
+            </View>
+            <Text style={styles.insightText}>{item}</Text>
+          </View>
+        ))}
+      </View>
+    ) : null}
+  </View>
+);
 
 const CollapsibleCard = ({
   title,
@@ -3631,9 +2747,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  navButtonDisabled: {
-    opacity: 0.6,
-  },
   navButtonActive: {
     backgroundColor: colors.accent,
     borderColor: colors.accent,
@@ -3642,23 +2755,8 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontWeight: '600',
   },
-  navButtonTextDisabled: {
-    color: colors.muted,
-  },
   navButtonTextActive: {
     color: '#fff',
-  },
-  navStatusReady: {
-    marginTop: 4,
-    color: '#7ae582',
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  navStatusPending: {
-    marginTop: 4,
-    color: '#f6c343',
-    fontSize: 12,
-    fontWeight: '600',
   },
   container: {
     padding: 20,
@@ -3692,6 +2790,113 @@ const styles = StyleSheet.create({
   sectionSubtitle: {
     color: colors.muted,
     marginBottom: 12,
+  },
+  heroPanel: {
+    backgroundColor: '#11182a',
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#2a3b62',
+    marginBottom: 14,
+    gap: 10,
+  },
+  heroHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-end',
+  },
+  heroEyebrow: {
+    color: colors.muted,
+    fontSize: 12,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    fontWeight: '700',
+  },
+  heroPercent: {
+    color: colors.text,
+    fontSize: 28,
+    fontWeight: '800',
+  },
+  heroProgressTrack: {
+    height: 10,
+    borderRadius: 999,
+    backgroundColor: '#0a0f1e',
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#25304a',
+  },
+  heroProgressFill: {
+    height: '100%',
+    borderRadius: 999,
+    backgroundColor: '#6c9dff',
+  },
+  statusIndicatorRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  statusIndicator: {
+    backgroundColor: '#0d1323',
+    borderRadius: 12,
+    padding: 10,
+    minWidth: 116,
+    borderWidth: 1,
+    borderColor: colors.border,
+    flexGrow: 1,
+    gap: 2,
+  },
+  statusIndicatorActive: {
+    borderColor: '#6c9dff',
+    backgroundColor: '#16213a',
+  },
+  statusDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 999,
+    backgroundColor: '#5d6372',
+    marginBottom: 4,
+  },
+  statusDotActive: {
+    backgroundColor: '#54e1a1',
+  },
+  statusLabel: {
+    color: colors.muted,
+    fontSize: 12,
+  },
+  statusState: {
+    color: colors.text,
+    fontWeight: '700',
+    fontSize: 13,
+  },
+  heroActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  quickActionButton: {
+    backgroundColor: '#1a2743',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderWidth: 1,
+    borderColor: '#30456f',
+    flexDirection: 'row',
+    gap: 8,
+    alignItems: 'center',
+    flexGrow: 1,
+    minWidth: 130,
+    justifyContent: 'center',
+  },
+  quickActionIcon: {
+    fontSize: 16,
+  },
+  quickActionText: {
+    color: colors.text,
+    fontWeight: '600',
+  },
+  heroMeta: {
+    color: colors.muted,
+    marginTop: 2,
   },
   field: {
     marginBottom: 12,
@@ -3759,6 +2964,9 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     marginBottom: 12,
+  },
+  compactButtonRow: {
+    maxWidth: 260,
   },
   primaryButtonText: {
     color: '#fff',
@@ -3949,221 +3157,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 12,
   },
-  marketFitCard: {
-    gap: 12,
-  },
-  marketScopeGrid: {
-    gap: 12,
-  },
-  marketGlobalSynopsisCard: {
-    backgroundColor: '#121725',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    marginBottom: 12,
-  },
-  marketSynopsisText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  marketScopeCard: {
-    backgroundColor: '#121725',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    gap: 10,
-  },
-  marketScopeTitle: {
-    color: colors.text,
-    fontSize: 16,
-    fontWeight: '700',
-  },
-  marketScopeSubtitle: {
-    color: colors.muted,
-    fontSize: 12,
-  },
-  marketScopeText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  marketFitLabel: {
-    color: colors.accentStrong,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-  },
-  marketChipRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 8,
-  },
-  marketChip: {
-    backgroundColor: '#0f1320',
-    borderRadius: 14,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  marketChipStrong: {
-    backgroundColor: '#1f3b2f',
-    borderRadius: 14,
-    paddingVertical: 6,
-    paddingHorizontal: 10,
-    borderWidth: 1,
-    borderColor: '#2a6b4f',
-  },
-  marketChipText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  marketSignalRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 6,
-  },
-  marketSignalText: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-  },
-  marketInferenceText: {
-    color: colors.muted,
-    fontSize: 12,
-    lineHeight: 17,
-  },
-  marketWaitingBanner: {
-    borderWidth: 1,
-    borderColor: '#f6c343',
-    backgroundColor: 'rgba(246, 195, 67, 0.12)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-  },
-  marketWaitingText: {
-    color: '#ffd166',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  analysisStatusBanner: {
-    borderWidth: 1,
-    borderColor: '#22d3ee',
-    backgroundColor: 'rgba(34, 211, 238, 0.12)',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    marginBottom: 12,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-  },
-  analysisStatusText: {
-    color: '#67e8f9',
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  marketGapBanner: {
-    backgroundColor: '#1a1f2e',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  marketGapTitle: {
-    color: colors.accentStrong,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.6,
-    marginBottom: 6,
-  },
-  marketGapText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  marketPill: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    backgroundColor: '#0f1320',
-  },
-  marketPillDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-  },
-  marketPillText: {
-    color: colors.text,
-    fontSize: 11,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.4,
-  },
-  marketTrendRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
-    backgroundColor: '#0f1320',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-  },
-  marketTrendArrow: {
-    fontSize: 22,
-    fontWeight: '700',
-    width: 24,
-    textAlign: 'center',
-  },
-  marketExploreCard: {
-    gap: 12,
-  },
-  marketExploreText: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  marketCandidateCard: {
-    gap: 10,
-  },
-  marketCandidateText: {
-    color: colors.text,
-    fontSize: 13,
-    lineHeight: 18,
-  },
-  marketCandidateList: {
-    gap: 8,
-  },
-  marketCandidateRow: {
-    backgroundColor: '#0f1320',
-    borderRadius: 10,
-    padding: 10,
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  marketCandidateStrong: {
-    color: colors.text,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  marketCandidateMeta: {
-    color: colors.muted,
-    fontSize: 12,
-  },
   graphicSection: {
     gap: 12,
   },
@@ -4186,103 +3179,6 @@ const styles = StyleSheet.create({
     color: colors.text,
     fontSize: 15,
     lineHeight: 22,
-    flexShrink: 1,
-    flexWrap: 'wrap',
-  },
-  highlightGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
-  },
-  highlightCard: {
-    backgroundColor: '#131c2c',
-    borderRadius: 12,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    flexBasis: 180,
-    flexGrow: 1,
-    minWidth: 0,
-    maxWidth: '100%',
-  },
-  highlightLabel: {
-    color: colors.accentStrong,
-    fontSize: 12,
-    fontWeight: '700',
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-    marginBottom: 6,
-  },
-  highlightValue: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '600',
-    flexShrink: 1,
-    flexWrap: 'wrap',
-    maxWidth: '100%',
-  },
-  highlightActionButton: {
-    backgroundColor: '#1a2840',
-    borderRadius: 10,
-    borderWidth: 1,
-    borderColor: colors.accent,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
-  },
-  highlightActionButtonText: {
-    color: colors.text,
-    fontSize: 14,
-    lineHeight: 20,
-    fontWeight: '700',
-  },
-  highlightMedian: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-    marginBottom: 4,
-  },
-  signalRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 6,
-  },
-  signalDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 999,
-  },
-  signalDotPositive: {
-    backgroundColor: '#37d67a',
-  },
-  signalDotNegative: {
-    backgroundColor: '#ff6b6b',
-  },
-  signalDotNeutral: {
-    backgroundColor: '#f6c343',
-  },
-  signalLabel: {
-    color: colors.text,
-    fontSize: 12,
-    fontWeight: '700',
-    letterSpacing: 0.3,
-  },
-  signalDivider: {
-    width: 1,
-    height: 12,
-    backgroundColor: colors.border,
-    marginHorizontal: 4,
-  },
-  signalTrendIcon: {
-    color: colors.text,
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  signalTrendLabel: {
-    color: colors.muted,
-    fontSize: 12,
   },
   insightList: {
     gap: 10,
@@ -4297,9 +3193,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.border,
   },
-  marketInsightRow: {
-    paddingLeft: 12,
-  },
   insightBadge: {
     width: 28,
     height: 28,
@@ -4313,16 +3206,11 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     fontSize: 12,
   },
-  insightContent: {
-    flex: 1,
-  },
   insightText: {
     color: colors.text,
     flex: 1,
     fontSize: 14,
     lineHeight: 20,
-    flexShrink: 1,
-    flexWrap: 'wrap',
   },
   skillSummaryCard: {
     backgroundColor: '#121725',
