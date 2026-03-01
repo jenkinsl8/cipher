@@ -200,10 +200,16 @@ const networkReportSchema = {
   additionalProperties: false,
   properties: {
     totalConnections: { type: 'number' },
+    titleBreakdown: { type: 'array', items: { type: 'string' } },
     industryBreakdown: { type: 'array', items: { type: 'string' } },
+    connectionTypeBreakdown: { type: 'array', items: { type: 'string' } },
     seniorityBreakdown: { type: 'array', items: { type: 'string' } },
     companyBreakdown: { type: 'array', items: { type: 'string' } },
     geographyBreakdown: { type: 'array', items: { type: 'string' } },
+    careerPathAlignment: { type: 'array', items: { type: 'string' } },
+    bestConfigurationInsights: { type: 'array', items: { type: 'string' } },
+    roleMatches: { type: 'array', items: { type: 'string' } },
+    connectionUtilityStrategy: { type: 'array', items: { type: 'string' } },
     hiringManagers: { type: 'array', items: { type: 'string' } },
     recruiters: { type: 'array', items: { type: 'string' } },
     warmIntroductions: { type: 'array', items: { type: 'string' } },
@@ -215,10 +221,16 @@ const networkReportSchema = {
   },
   required: [
     'totalConnections',
+    'titleBreakdown',
     'industryBreakdown',
+    'connectionTypeBreakdown',
     'seniorityBreakdown',
     'companyBreakdown',
     'geographyBreakdown',
+    'careerPathAlignment',
+    'bestConfigurationInsights',
+    'roleMatches',
+    'connectionUtilityStrategy',
     'hiringManagers',
     'recruiters',
     'warmIntroductions',
@@ -302,30 +314,64 @@ const buildContextBlock = ({
   resumeText: string;
   skills: SkillInput[];
   connections: LinkedInConnection[];
-}) => `User profile:
+}) => {
+  const parsedResumeProfile = {
+    currentRole: profile.currentRole || 'Unknown',
+    yearsExperience: profile.yearsExperience || 'Unknown',
+    education: profile.education || 'Unknown',
+    certifications: profile.certifications || 'Unknown',
+    location: profile.location || 'Unknown',
+    industries: profile.industries || 'Unknown',
+  };
+  const parsedResumeSkills = skills.map((skill) => ({
+    name: skill.name,
+    category: skill.category,
+    years: skill.years,
+    evidence: skill.evidence,
+  }));
+  const parsedResumeSkillNames = parsedResumeSkills.map((skill) => skill.name.toLowerCase());
+
+  return `Parsed resume profile (source of truth):
+${JSON.stringify(parsedResumeProfile, null, 2)}
+
+Full user profile:
 ${JSON.stringify(profile, null, 2)}
 
 Resume text (may be truncated):
 ${resumeText}
 
-Skills extracted:
-${JSON.stringify(
-  skills.map((skill) => ({
-    name: skill.name,
-    category: skill.category,
-    years: skill.years,
-  })),
-  null,
-  2
-)}
+Parsed resume skills:
+${JSON.stringify(parsedResumeSkills, null, 2)}
+
+Parsed resume skill names (quick reference):
+${JSON.stringify(parsedResumeSkillNames, null, 2)}
 
 LinkedIn connections sample:
-${JSON.stringify(connections, null, 2)}`;
+${JSON.stringify(connections, null, 2)}
 
-const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD,
+Instruction: Use the parsed resume profile and parsed resume skills above for all analysis, including market conditions and follow-up recommendations. Do not tell the user to acquire a skill that already appears in parsed resume skills.`;
+};
+
+const sourceRules = `Use ONLY public, reliable data sources (BLS, O*NET, WEF, OECD, ILO,
 LinkedIn Workforce Reports, World Bank, IMF, government labor stats, reputable salary surveys).
 Always cite sources with URLs in bullets when giving market, salary, or industry claims.
-Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
+For international outlooks, prioritize World Economic Forum, ILO, and other globally recognized
+labor market sources. Be conservative and realistic. If data is unknown, state assumptions and what to verify.`;
+
+const recommendationRules =
+  'Never recommend acquiring a skill that already appears in parsed resume skills. For existing skills, recommend deeper application, proof of impact, specialization, or adjacent upskilling instead.';
+
+const inferredSkillRules =
+  'Infer likely skills from certifications, education, and described accomplishments even when a skill is not explicitly listed in parsed resume skills. Treat inferred skills as candidate strengths when supported by evidence, and review experience for proof of applied use before calling it a gap.';
+
+const skillsToMarketHandoffRules =
+  'Incorporate the skills agent handoff into market analysis. Ask Aegis handoff data for the candidate\'s top skills and estimated experience levels in the highest-demand skill areas for each geography. Use it to calibrate demand assumptions, explain competitive positioning, and refine geographic or international recommendations.';
+
+const competitivenessRules =
+  'When assessing competitiveness, compare education credentials against practical experience depth. Evaluate how the market values each by referencing representative job descriptions for target roles, especially required/preferred education and desired years of experience, and explain tradeoffs clearly.';
+
+const sentinelFormatRules =
+  'Write market sections in a clear Sentinel-style narrative. Cover: (1) global market overview with major hiring drivers by industry, (2) candidate competitiveness with explicit strengths and opportunities, (3) in-demand skills mapped to parsed resume skills and inferred experience, (4) regional competitiveness across North America / Europe / APAC when relevant, and (5) a concise conclusion with next-step validation sources. Use concrete numbers when available and include source URLs in bullets.';
 
 const callAgent = async <T>({
   apiKey,
@@ -487,6 +533,7 @@ export const parseCipherReportWithOpenAI = async ({
   resumeText,
   skills,
   connections,
+  onProgress,
 }: {
   apiKey: string;
   model: string;
@@ -495,6 +542,13 @@ export const parseCipherReportWithOpenAI = async ({
   resumeText: string;
   skills: SkillInput[];
   connections: LinkedInConnection[];
+  onProgress?: (payload: {
+    agent?: 'market' | 'skills' | 'career' | 'ats' | 'network';
+    completedAgents: number;
+    totalAgents: number;
+    report: CipherReport;
+    done: boolean;
+  }) => void;
 }): Promise<CipherReport> => {
   const trimmedResume = resumeText.trim();
   const truncatedResume =
@@ -507,22 +561,28 @@ export const parseCipherReportWithOpenAI = async ({
     connections: limitedConnections,
   });
 
-  const [marketData, skillsData, careerData, atsData, networkData] = await Promise.all([
-    callAgent<Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>>(
-      {
-        apiKey,
-        model,
-        baseUrl,
-        schemaName: 'market_agent',
-        schema: marketAgentSchema,
-        systemPrompt:
-          `You are Sentinel, a market conditions analyst.\n${sourceRules}\n` +
-          `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
-          `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
-        userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
-      }
-    ),
-    callAgent<Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>>(
+  const totalAgents = 5;
+  const completedAgents = new Set<'market' | 'skills' | 'career' | 'ats' | 'network'>();
+  let partialReport: Partial<CipherReport> = {};
+  const publishProgress = (
+    agent: 'market' | 'skills' | 'career' | 'ats' | 'network',
+    payload: Partial<CipherReport>,
+    done = false
+  ) => {
+    partialReport = { ...partialReport, ...payload };
+    completedAgents.add(agent);
+    onProgress?.({
+      agent,
+      completedAgents: completedAgents.size,
+      totalAgents,
+      report: normalizeAiReport(partialReport),
+      done,
+    });
+  };
+
+  const skillsPromise = callAgent<
+    Pick<CipherReport, 'skillsPortfolio' | 'aiResilience' | 'competencyMilestones' | 'skillsGapResources' | 'learningRoadmap' | 'projectsToPursue'>
+  >(
       {
         apiKey,
         model,
@@ -530,14 +590,43 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'skills_agent',
         schema: skillsAgentSchema,
         systemPrompt:
-          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n` +
+          `You are Aegis, a skills and AI impact analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n` +
           `Return skillsPortfolio, aiResilience, competencyMilestones, skillsGapResources, ` +
           `learningRoadmap, and projectsToPursue. Use ids: ai-resilience, competency-milestones, ` +
           `skills-gap-resources, learning-roadmap, projects-to-pursue.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
       }
-    ),
-    callAgent<Pick<CipherReport, 'aiForward' | 'careerInsights' | 'careerPaths' | 'earningsMaximization' | 'opportunityMap' | 'actionPlan' | 'gapAnalysis' | 'demographicStrategy' | 'entrepreneurshipPlan'>>(
+    ).then((data) => {
+      publishProgress('skills', data);
+      return data;
+    });
+
+  const marketPromise = skillsPromise.then((skillsData) =>
+    callAgent<
+      Pick<CipherReport, 'marketSnapshot' | 'marketOutlook' | 'geographicOptions' | 'internationalPlan'>
+    >({
+      apiKey,
+      model,
+      baseUrl,
+      schemaName: 'market_agent',
+      schema: marketAgentSchema,
+      systemPrompt:
+        `You are Sentinel, a market conditions analyst.\n${sourceRules}\n${recommendationRules}\n${inferredSkillRules}\n${skillsToMarketHandoffRules}\n${competitivenessRules}\n${sentinelFormatRules}\n` +
+        `Return marketSnapshot, marketOutlook, geographicOptions, and internationalPlan.\n` +
+        `Use ids: market-snapshot, market-outlook, geographic-options, international-plan.`,
+      userPrompt:
+        `${contextBlock}\n\nSkills agent handoff from Aegis (source of truth for assessed strengths and gaps):\n` +
+        `${JSON.stringify(skillsData, null, 2)}\n\n` +
+        `Sentinel task: Ask the Aegis handoff for the candidate's top skills and level of experience in the high-demand areas for each geography. Reflect that handoff explicitly in marketSnapshot, geographicOptions, and marketOutlook.\n\nRespond with JSON only.`,
+    }).then((data) => {
+      publishProgress('market', data);
+      return data;
+    })
+  );
+
+  const careerPromise = callAgent<
+    Pick<CipherReport, 'aiForward' | 'careerInsights' | 'careerPaths' | 'earningsMaximization' | 'opportunityMap' | 'actionPlan' | 'gapAnalysis' | 'demographicStrategy' | 'entrepreneurshipPlan'>
+  >(
       {
         apiKey,
         model,
@@ -545,15 +634,19 @@ export const parseCipherReportWithOpenAI = async ({
         schemaName: 'career_agent',
         schema: careerAgentSchema,
         systemPrompt:
-          `You are Atlas, a career path strategist.\n${sourceRules}\n` +
+          `You are Atlas, a career path strategist.\n${sourceRules}\n${recommendationRules}\n` +
           `Return aiForward, careerInsights, careerPaths (Traditional/Alternate/Moonshot), ` +
           `earningsMaximization, opportunityMap, actionPlan, gapAnalysis, demographicStrategy, ` +
           `and entrepreneurshipPlan. Use ids: ai-forward, career-insights, earnings-maximization, ` +
           `opportunity-map, action-plan, gap-analysis, demographic-strategy, entrepreneurship-plan.`,
         userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
       }
-    ),
-    callAgent<Pick<CipherReport, 'resumeAnalysis'>>({
+    ).then((data) => {
+      publishProgress('career', data);
+      return data;
+    });
+
+  const atsPromise = callAgent<Pick<CipherReport, 'resumeAnalysis'>>({
       apiKey,
       model,
       baseUrl,
@@ -562,8 +655,12 @@ export const parseCipherReportWithOpenAI = async ({
       systemPrompt:
         `You are an ATS analyst.\n${sourceRules}\nReturn resumeAnalysis (or null if no resume text).`,
       userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
-    }),
-    callAgent<Pick<CipherReport, 'networkReport'>>({
+    }).then((data) => {
+      publishProgress('ats', data);
+      return data;
+    });
+
+  const networkPromise = callAgent<Pick<CipherReport, 'networkReport'>>({
       apiKey,
       model,
       baseUrl,
@@ -571,16 +668,40 @@ export const parseCipherReportWithOpenAI = async ({
       schema: networkAgentSchema,
       systemPrompt:
         `You are Nexus, a networking strategy analyst.\n${sourceRules}\n` +
+        `Use network science research on career mobility and job search outcomes (e.g., strength of weak ties, diverse bridging ties, and access to decision-makers). ` +
+        `Return: (1) breakdowns for titles/levels, industries, and connection types, ` +
+        `(2) alignment analysis against candidate target job titles and plausible Atlas-style career paths, ` +
+        `(3) identify people in the uploaded connections who fill critical roles, and ` +
+        `(4) concrete strategy to make those relationships more useful. ` +
         `Return networkReport or null if there are no connections.`,
       userPrompt: `${contextBlock}\n\nRespond with JSON only.`,
-    }),
+    }).then((data) => {
+      publishProgress('network', data);
+      return data;
+    });
+
+  const [marketData, skillsData, careerData, atsData, networkData] = await Promise.all([
+    marketPromise,
+    skillsPromise,
+    careerPromise,
+    atsPromise,
+    networkPromise,
   ]);
 
-  return normalizeAiReport({
+  const finalReport = normalizeAiReport({
     ...marketData,
     ...skillsData,
     ...careerData,
     ...atsData,
     ...networkData,
   });
+
+  onProgress?.({
+    completedAgents: totalAgents,
+    totalAgents,
+    report: finalReport,
+    done: true,
+  });
+
+  return finalReport;
 };

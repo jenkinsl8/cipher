@@ -249,7 +249,7 @@ export default {
     }
 
     const url = new URL(request.url);
-    if (url.pathname !== '/api/resume/parse') {
+    if (url.pathname !== '/api/resume/parse' && url.pathname !== '/api/agent/chat') {
       return new Response('Not Found', { status: 404, headers: cors });
     }
 
@@ -258,8 +258,46 @@ export default {
     }
 
     const body = await request.json().catch(() => null);
+    if (url.pathname === '/api/agent/chat') {
+      const model = body?.model || env.OPENAI_MODEL || 'gpt-5.2';
+      const messages = Array.isArray(body?.messages) ? body.messages : [];
+      const temperature = typeof body?.temperature === 'number' ? body.temperature : 0.35;
+
+      if (!messages.length) {
+        return new Response(JSON.stringify({ error: 'messages is required' }), {
+          status: 400,
+          headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const baseUrl = (env.OPENAI_BASE_URL || 'https://api.openai.com').replace(/\/$/, '');
+      const response = await fetch(`${baseUrl}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${env.OPENAI_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ model, temperature, messages }),
+      });
+
+      const rawText = await response.text();
+      if (!response.ok) {
+        return new Response(rawText || 'Upstream request failed', {
+          status: response.status,
+          headers: { ...cors, 'Content-Type': 'application/json' },
+        });
+      }
+
+      const data = parseJsonSafely(rawText);
+      const reply = data?.choices?.[0]?.message?.content?.trim();
+      return new Response(JSON.stringify({ reply: reply || '', raw: data }), {
+        status: 200,
+        headers: { ...cors, 'Content-Type': 'application/json' },
+      });
+    }
+
     const resumeText = body?.text?.trim();
-    const model = body?.model || env.OPENAI_MODEL || 'gpt-4o';
+    const model = body?.model || env.OPENAI_MODEL || 'gpt-5.2';
     const file = body?.file;
     const fileExtraction = await extractTextFromFile(file);
     const warnings: string[] = [...fileExtraction.warnings];

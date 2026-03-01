@@ -35,7 +35,7 @@ local development and Pages hosting.
 ## Serverless AI Resume Parser (no API key in app)
 
 To use the AI resume parser without placing an API key in the client, deploy the
-Vercel serverless endpoint in `vercel/` and paste its URL into the app.
+Vercel serverless endpoint in `vercel/` and paste its base URL into the app. In serverless mode, resume parsing and agent chat both run without entering an API key in the client.
 
 ### Direct OpenAI (client-side)
 
@@ -57,7 +57,7 @@ OPENAI_API_KEY=sk-... npm test -- aiResumeParser.integration.test.ts
 1. Create a Vercel project with **Root Directory** set to `vercel/`.
 2. Add environment variables:
    - `OPENAI_API_KEY` (required)
-   - `OPENAI_MODEL` (optional, default: `gpt-4o`)
+   - `OPENAI_MODEL` (optional, default: `gpt-5.2`)
    - `OPENAI_BASE_URL` (optional, default: `https://api.openai.com`)
 3. Deploy.
 
@@ -73,7 +73,7 @@ must also be HTTPS. Browsers block insecure (http) requests from secure pages.
 ## What the app does
 
 - Extracts work history, skills, and education from PDF/DOCX resumes
-- Optional AI resume parser via serverless endpoint (no API key in app) for higher accuracy
+- Optional AI resume parser and agent chat via serverless endpoint (no API key in app)
 - Collects demographics and goals for personalization
 - Runs AI analysis agents for skills, market conditions, and career paths
 - Produces AI-forward opportunities and learning roadmaps with source citations

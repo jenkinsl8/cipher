@@ -58,6 +58,7 @@ export type MarketSnapshot = {
 export type LinkedInConnection = {
   firstName: string;
   lastName: string;
+  url: string;
   email: string;
   company: string;
   position: string;
@@ -136,10 +137,16 @@ export type CareerPathTier = {
 
 export type NetworkReport = {
   totalConnections: number;
+  titleBreakdown: string[];
   industryBreakdown: string[];
+  connectionTypeBreakdown: string[];
   seniorityBreakdown: string[];
   companyBreakdown: string[];
   geographyBreakdown: string[];
+  careerPathAlignment: string[];
+  bestConfigurationInsights: string[];
+  roleMatches: string[];
+  connectionUtilityStrategy: string[];
   hiringManagers: string[];
   recruiters: string[];
   warmIntroductions: string[];
