@@ -180,12 +180,16 @@ export type CipherReport = {
   marketSnapshot: ReportSection;
   skillsPortfolio: SkillInsight[];
   aiResilience: ReportSection;
+  missingSkillsAnalysis: ReportSection;
   aiForward: ReportSection;
   demographicStrategy: ReportSection;
   careerInsights: ReportSection;
   careerPaths: CareerPathTier[];
   learningRoadmap: ReportSection;
   skillsGapResources: ReportSection;
+  educationPlan: ReportSection;
+  calendarPlan: ReportSection;
+  mentorBlueprint: ReportSection;
   competencyMilestones: ReportSection;
   projectsToPursue: ReportSection;
   earningsMaximization: ReportSection;

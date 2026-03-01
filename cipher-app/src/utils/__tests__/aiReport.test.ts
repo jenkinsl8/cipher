@@ -27,9 +27,13 @@ const mockedResponsesByAgent: Record<string, Record<string, unknown>> = {
   skills_agent: {
     skillsPortfolio: [],
     aiResilience: section('ai-resilience'),
+    missingSkillsAnalysis: section('missing-skills-analysis'),
     competencyMilestones: section('competency-milestones'),
     skillsGapResources: section('skills-gap-resources'),
     learningRoadmap: section('learning-roadmap'),
+    educationPlan: section('education-plan'),
+    calendarPlan: section('calendar-plan'),
+    mentorBlueprint: section('mentor-blueprint'),
     projectsToPursue: section('projects-to-pursue'),
   },
   career_agent: {
