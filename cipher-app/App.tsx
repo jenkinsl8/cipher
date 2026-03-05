@@ -253,6 +253,52 @@ export default function App() {
   const [resumeChatStatus, setResumeChatStatus] = useState('');
   const [activeCareerPlanIndex, setActiveCareerPlanIndex] = useState(0);
 
+  const resetSessionState = () => {
+    setActiveCard('home');
+    setAgentQuestion('');
+    setAgentThread([]);
+    setAgentChatStatus('');
+    setMarketQuestion('');
+    setMarketThread([]);
+    setMarketChatStatus('');
+    setSkillsQuestion('');
+    setSkillsThread([]);
+    setSkillsChatStatus('');
+    setCareerQuestion('');
+    setCareerThread([]);
+    setCareerChatStatus('');
+    setAtsQuestion('');
+    setAtsThread([]);
+    setAtsChatStatus('');
+    setNetworkQuestion('');
+    setNetworkThread([]);
+    setNetworkChatStatus('');
+    setResumeQuestion('');
+    setResumeThread([]);
+    setResumeChatStatus('');
+    setActiveCareerPlanIndex(0);
+  };
+
+  useEffect(() => {
+    if (Platform.OS !== 'web' || typeof window === 'undefined') return;
+
+    const navEntry = performance.getEntriesByType('navigation')[0] as
+      | PerformanceNavigationTiming
+      | undefined;
+    if (navEntry?.type === 'reload') {
+      resetSessionState();
+    }
+
+    const handlePageShow = (event: PageTransitionEvent) => {
+      if (event.persisted) {
+        resetSessionState();
+      }
+    };
+
+    window.addEventListener('pageshow', handlePageShow);
+    return () => window.removeEventListener('pageshow', handlePageShow);
+  }, []);
+
   const connections = useMemo(
     () => parseLinkedInConnections(linkedInCsv),
     [linkedInCsv]
